@@ -1,6 +1,6 @@
 ###
 from google.cloud.bigquery_storage import BigQueryReadClient, types
-from dataproc_template import BaseTemplate
+from dataproc_templates import BaseTemplate
 
 import pyarrow as pa
 from pyspark.sql import SparkSession

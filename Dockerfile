@@ -16,25 +16,25 @@ RUN apt-get update \
 # Enable jemalloc2 as default memory allocator
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
-RUN pip install -U pip && \
-    pip install \
-        google-dataproc-templates==0.0.3 \
-        google-cloud-bigquery-storage[pyarrow]>=2.18 \
-        graphdatascience==1.6 \
-        pandas \
-        pyarrow>=4,<11
-ENV PYSPARK_PYTHON=/usr/bin/python3
-
-ENV PYTHONPATH=/opt/python/packages
-RUN mkdir -p "${PYTHONPATH}"
-
 # (Required) Create the 'spark' group/user.
 # The GID and UID must be 1099. Home directory is required.
-RUN groupadd -g 1099 spark
-RUN useradd -u 1099 -g 1099 -d /home/spark -m spark
+RUN groupadd -g 1099 spark \
+    && useradd -u 1099 -g 1099 -d /home/spark -m spark
 USER spark
 
+##############################################################
+FROM base AS pybase
+ENV PYSPARK_PYTHON=/usr/bin/python3 \
+    PYTHONPATH=/home/spark/packages
+RUN mkdir -p "${PYTHONPATH}" \
+    && pip install --target "${PYTHONPATH}" \
+        "google-dataproc-templates==0.0.3" \
+        "google-cloud-bigquery-storage[pyarrow]>=2.18" \
+        "graphdatascience==1.6" \
+        "pandas" \
+        "pyarrow>=4,<11" \
+    && pip cache purge
 
-FROM base
-ENV PYTHONPATH=/opt/python/packages
+###############################################################
+FROM pybase
 COPY templates "${PYTHONPATH}"/templates
