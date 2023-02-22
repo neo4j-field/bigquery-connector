@@ -1,0 +1,9 @@
+venv/
+__pycache__
+.#*
+dist/
+.mypy_cache/
+*.egg-info/
+build/
+.pytest_cache
+Dockerfile
