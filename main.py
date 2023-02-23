@@ -5,9 +5,12 @@ from templates import Experiment
 spark = (
     SparkSession
     .builder
-    .appName("Experiment")
+    .appName("Neo4j BigQuery Integration")
     .getOrCreate()
 )
 
+# todo: initialize log4j in spark?
+
 template = Experiment()
-template.run(spark, dict())
+args = template.parse_args()
+template.run(spark, args)
