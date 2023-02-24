@@ -166,8 +166,19 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         return vars(ns)
 
     def run(self, spark: SparkSession, args: Dict[str, Any]) -> None:
-        logger = self.get_logger(spark=spark)
+        sc = spark.sparkContext
+        logger = (
+            sc._jvm.org.apache.log4j.LogManager # type: ignore
+            .getLogger(self.__class__.__name__)
+        )
         start_time = time.time()
+
+        logger.info(
+            f"starting job for {args[c.BQ_PROJECT]}/{args[c.BQ_DATASET]}/{{"
+            f"nodes:[{','.join(args[c.NODE_TABLES])}], "
+            f"edges:[{','.join(args[c.EDGE_TABLES])}]}} "
+            f"(server concurrency={args[c.NEO4J_CONCURRENCY]})"
+        )
 
         # 1. Load the Graph Model.
         if args[c.NEO4J_GRAPH_JSON]:
@@ -200,7 +211,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
                                     password=args[c.NEO4J_PASSWORD],
                                     concurrency=args[c.NEO4J_CONCURRENCY])
         bq = BigQuerySource(args[c.BQ_PROJECT], args[c.BQ_DATASET])
-        sc = spark.sparkContext
+        logger.info(f"using neo4j client {neo4j} (tls={args[c.NEO4J_USE_TLS]})")
 
         # 3. Prepare our collection of streams. We do this from the Spark driver
         #    so we can more easily spread the streams across the workers.
@@ -219,7 +230,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         nodes_start = time.time()
         cnt, size = (
             sc
-            .parallelize(node_streams)
+            .parallelize(node_streams, 32)
             .map(bq.consume_stream, True) # don't shuffle
             .map(send_nodes(neo4j, graph))
             .reduce(tuple_sum)
@@ -243,7 +254,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         edges_start = time.time()
         cnt, size = (
             sc
-            .parallelize(edge_streams)
+            .parallelize(edge_streams, 64)
             .map(bq.consume_stream, True) # don't shuffle
             .map(send_edges(neo4j, graph))
             .reduce(tuple_sum)
