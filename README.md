@@ -49,21 +49,20 @@ PROPERTIES="${PROPERTIES},spark.dynamicAllocation.initialExecutors=${SPARK_EXE_C
 PROPERTIES="${PROPERTIES},spark.dynamicAllocation.minExecutors=${SPARK_EXE_COUNT}"
 
 gcloud dataproc batches submit pyspark \
-	--region="europe-west1" \
-	--version="2.0" \
-	--deps-bucket="gs://neo4j_voutila" \
-	--container-image="gcr.io/neo4j-se-team-201905/dataproc-pyarrow:${VERSION}" \
+    --region="europe-west1" \
+    --version="2.0" \
+    --deps-bucket="gs://neo4j_voutila" \
+    --container-image="gcr.io/neo4j-se-team-201905/dataproc-pyarrow:${VERSION}" \
     --properties="${PROPERTIES}" \
-	main.py -- \
-	--graph_uri="gs://neo4j_voutila/gcdemo/mag240_bq.json" \
-	--neo4j_host="8bf8cb41.databases.neo4j.io" \
-	--neo4j_password="YOUR_SUPER_SECRET_PASSWORD" \
-	--bq_project="neo4j-se-team-201905" \
-	--bq_dataset="gcdemo" \
-	--node_tables="papers2,authors,institution" \
-	--edge_tables="citations2,authorship2,affiliation" \
+    main.py -- \
+    --graph_uri="gs://neo4j_voutila/gcdemo/mag240_bq.json" \
+    --neo4j_host="abcdefgh.databases.neo4j.io" \
+    --neo4j_password="YOUR_SUPER_SECRET_PASSWORD" \
+    --bq_project="neo4j-se-team-201905" \
+    --bq_dataset="gcdemo" \
+    --node_tables="papers2,authors,institution" \
+    --edge_tables="citations2,authorship2,affiliation" \
     --neo4j_concurrency="41"
-
 ```
 
 The key parts to note:
