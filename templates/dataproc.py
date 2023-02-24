@@ -12,7 +12,7 @@ from pyspark.sql import SparkSession
 
 import neo4j_arrow as na
 from ._bq_client import BigQuerySource
-from . import constants, util
+from . import constants as c, util
 
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -65,14 +65,15 @@ def tuple_sum(a: Tuple[int, int], b: Tuple[int, int]) -> Tuple[int, int]:
 def flatten(lists: List[List[Any]],
             fn: Optional[Callable[[Any], Any]] = None) -> List[Any]:
     """
-    Flatten a list of lists, applying an optional function (fn) to the values.
+    Flatten a list of lists, applying an optional function (fn) to the initial
+    list of lists.
     """
     if not fn:
         fn = lambda x: x
     return [x for y in map(fn, lists) for x in y]
 
 
-class BigQueryToNeo4jGDSTemplate(BaseTemplate):
+class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
     """
     Build a new graph projection in Neo4j GDS / AuraDS from one or many BigQuery
     tables. Utilizes Apache Arrow and Arrow Flight to achieve high throughput
@@ -87,43 +88,43 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):
     def parse_args(args: Optional[Sequence[str]] = None) -> Dict[str, Any]:
         parser = argparse.ArgumentParser()
         parser.add_argument(
-            "--graph_json",
+            f"--{c.NEO4J_GRAPH_JSON}",
             type=str,
             help="JSON-based representation of the Graph model.",
         )
         parser.add_argument(
-            f"--{constants.NEO4J_GRAPH_JSON_URI}",
+            f"--{c.NEO4J_GRAPH_JSON_URI}",
             type=str,
             help="URI to a JSON representation of the Graph model.",
         )
         parser.add_argument(
-            "--neo4j_host",
+            f"--{c.NEO4J_HOST}",
             help="Hostname or IP address of Neo4j server.",
             default="localhost",
         )
         parser.add_argument(
-            "--neo4j_port",
+            f"--{c.NEO4J_PORT}",
             default=8491,
             type=int,
             help="TCP Port of Neo4j Arrow Flight service.",
         )
         parser.add_argument(
-            "--neo4j_use_tls",
+            f"--{c.NEO4J_USE_TLS}",
             default="True",
             type=util.strtobool,
             help="Use TLS for encrypting Neo4j Arrow Flight connection.",
         )
         parser.add_argument(
-            "--neo4j_user",
+            f"--{c.NEO4J_USER}",
             default="neo4j",
             help="Neo4j Username.",
         )
         parser.add_argument(
-            "--neo4j_password",
+            f"--{c.NEO4J_PASSWORD}",
             help="Neo4j Password",
         )
         parser.add_argument(
-            "--neo4j_concurrency",
+            f"--{c.NEO4J_CONCURRENCY}",
             default=4,
             type=int,
             help="Neo4j server-side concurrency.",
@@ -143,12 +144,12 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):
             default=[],
         )
         parser.add_argument(
-            "--bq_project",
+            f"--{c.BQ_PROJECT}",
             type=str,
             help="GCP project containing BigQuery tables."
         )
         parser.add_argument(
-            "--bq_dataset",
+            f"--{c.BQ_DATASET}",
             type=str,
             help="BigQuery dataset containing BigQuery tables."
         )
@@ -175,12 +176,12 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):
         start_time = time.time()
 
         # 1. Load the Graph Model.
-        if args[constants.NEO4J_GRAPH_JSON]:
+        if args[c.NEO4J_GRAPH_JSON]:
             # Try loading a literal JSON-based model
-            graph = na.model.Graph.from_json(args[constants.NEO4J_GRAPH_JSON])
-        elif args[constants.NEO4J_GRAPH_JSON_URI]:
+            graph = na.model.Graph.from_json(args[c.NEO4J_GRAPH_JSON])
+        elif args[c.NEO4J_GRAPH_JSON_URI]:
             # Fall back to URI
-            uri = args[constants.NEO4J_GRAPH_JSON_URI]
+            uri = args[c.NEO4J_GRAPH_JSON_URI]
             graph = load_model_from_gcs(uri)
             if not graph:
                 raise ValueError(f"failed to load graph from {uri}")
@@ -189,22 +190,22 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):
             raise ValueError("missing graph data model uri or literal JSON")
 
         # 1b. Override graph and/or database name.
-        if constants.NEO4J_GRAPH_NAME in args:
-            graph = graph.named(args[constants.NEO4J_GRAPH_NAME])
-        if constants.NEO4J_DB_NAME in args:
-            graph = graph.in_db(args[constants.NEO4J_DB_NAME])
+        if c.NEO4J_GRAPH_NAME in args:
+            graph = graph.named(args[c.NEO4J_GRAPH_NAME])
+        if c.NEO4J_DB_NAME in args:
+            graph = graph.in_db(args[c.NEO4J_DB_NAME])
         logger.info(f"using graph model {graph.to_json()}")
 
         # 2. Initialize our clients for source and sink.
-        neo4j = na.Neo4jArrowClient(args["neo4j_host"],
+        neo4j = na.Neo4jArrowClient(args[c.NEO4J_HOST],
                                     graph.name,
-                                    port=args["neo4j_port"],
-                                    tls=args["neo4j_use_tls"],
+                                    port=args[c.NEO4J_PORT],
+                                    tls=args[c.NEO4J_USE_TLS],
                                     database=graph.db,
-                                    user=args["neo4j_user"],
-                                    password=args["neo4j_password"],
-                                    concurrency=args["neo4j_concurrency"])
-        bq = BigQuerySource(args["bq_project"], args["bq_dataset"])
+                                    user=args[c.NEO4J_USER],
+                                    password=args[c.NEO4J_PASSWORD],
+                                    concurrency=args[c.NEO4J_CONCURRENCY])
+        bq = BigQuerySource(args[c.BQ_PROJECT], args[c.BQ_DATASET])
         sc = spark.sparkContext
 
         # 3. Prepare our collection of streams. We do this from the Spark driver

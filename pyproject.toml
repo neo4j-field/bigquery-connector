@@ -3,3 +3,4 @@ python_version = 3.8
 warn_return_any = true
 ignore_missing_imports = true
 exclude = ["venv"]
+strict = true

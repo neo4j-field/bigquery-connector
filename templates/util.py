@@ -4,6 +4,7 @@ __doc__ = """
 ------------------------------------------------------
 util: vendored functions from the CPython distribution
 ------------------------------------------------------
+24-Feb-2023: added types (Dave Voutila)
 """
 
 __license__ =  """
@@ -58,7 +59,8 @@ agrees to be bound by the terms and conditions of this License
 Agreement.
 """
 
-def strtobool (val):
+
+def strtobool(val: str) -> int:
     """Convert a string representation of truth to true (1) or false (0).
 
     True values are 'y', 'yes', 't', 'true', 'on', and '1'; false values

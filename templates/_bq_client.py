@@ -49,10 +49,10 @@ class BigQuerySource:
         self.data_format = data_format
         self.max_stream_count = min(1_000, max_stream_count)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"BigQuerySource{{{self.basepath}}}"
 
-    def __getstate__(self):
+    def __getstate__(self) -> Dict[str, Any]:
         state = self.__dict__.copy()
         if "client" in state:
             del state["client"]
@@ -93,8 +93,11 @@ class BigQuerySource:
         if getattr(self, "client", None) is None:
             self.client = BigQueryReadClient()
 
-        reader = cast(BigQueryReadClient, self.client).read_rows(stream)
-        rows = reader.rows()
+        rows = (
+            cast(BigQueryReadClient, self.client)
+            .read_rows(stream) # type: ignore
+            .rows()
+        )
         if self.data_format == DataFormat.ARROW:
             for page in rows.pages:
                 arrow = page.to_arrow()
