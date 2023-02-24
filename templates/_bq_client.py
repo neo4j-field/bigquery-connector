@@ -13,11 +13,20 @@ import pandas as pd
 import pyarrow as pa
 import neo4j_arrow as na
 
-from typing import cast, Any, Dict, Generator, List, Optional, Union, Tuple
-
+from typing import (
+    cast, Any, Dict, Generator, List, NamedTuple, Optional, Union, Tuple
+)
 
 Arrow = Union[pa.Table, pa.RecordBatch]
 DataStream = Generator[Union[Arrow, pd.DataFrame], None, None]
+
+
+class BQStream(NamedTuple):
+    """
+    Represents a streamable part of a BQ Table. Used to simplify PySpark jobs.
+    """
+    table: str
+    stream: str
 
 
 class BigQuerySource:
@@ -25,13 +34,13 @@ class BigQuerySource:
     Wrapper around a BigQuery Dataset. Uses the Storage API to generate a list
     of streams that the BigQueryReadClient can fetch.
     """
+    client: Optional[BigQueryReadClient] = None
 
     def __init__(self, project_id: str, dataset: str, *,
                  data_format: int = DataFormat.ARROW,
                  max_stream_count: int = 1_000):
         self.project_id = project_id
         self.dataset = dataset
-        self.client: Optional[BigQueryReadClient] = None
         self.basepath = f"projects/{self.project_id}/datasets/{self.dataset}"
         if max_stream_count < 1:
             raise ValueError("max_stream_count must be greater than 0")
@@ -54,8 +63,11 @@ class BigQuerySource:
                                 max_stream_count=self.max_stream_count)
         return source
 
-    def table(self, table: str, *, fields: List[str] = []) -> List[str]:
-        """Get one or many streams for a given BigQuery table."""
+    def table(self, table: str, *, fields: List[str] = []) -> List[BQStream]:
+        """
+        Get one or many streams for a given BigQuery table, returning a Tuple
+        of the table name and the list of its streams.
+        """
         if self.client is None:
             self.client = BigQueryReadClient()
 
@@ -71,10 +83,13 @@ class BigQuerySource:
             read_session=read_session,
             max_stream_count=self.max_stream_count,
         )
-        return [stream.name for stream in session.streams]
+        return [BQStream(table=table, stream=s.name) for s in session.streams]
 
-    def consume_stream(self, stream: str) -> DataStream:
-        """Apply consumer to a stream in the form of a generator"""
+    def consume_stream(self, bq_stream: BQStream) -> DataStream:
+        """
+        Generate a stream
+        """
+        table, stream = bq_stream
         if getattr(self, "client", None) is None:
             self.client = BigQueryReadClient()
 
@@ -82,9 +97,12 @@ class BigQuerySource:
         rows = reader.rows()
         if self.data_format == DataFormat.ARROW:
             for page in rows.pages:
-                yield page.to_arrow()
+                arrow = page.to_arrow()
+                schema = arrow.schema.with_metadata({"_table": table})
+                yield arrow.from_arrays(arrow.columns, schema=schema)
         elif self.data_format == DataFormat.AVRO:
             for page in rows.pages:
+                # TODO: schema updates to specify the source table
                 yield page.to_dataframe()
         else:
             raise ValueError("invalid data format")
