@@ -207,7 +207,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):
         logger.info(f"signalled nodes complete: {result}")
 
         # 7. Now stream Edges via the PySpark workers.
-        cnd_size = (
+        cnt, size = (
             sc
             .parallelize(edge_streams)
             .map(bq.consume_stream, True) # don't shuffle
