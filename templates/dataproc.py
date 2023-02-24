@@ -132,13 +132,13 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
 
         # BigQuery Parameters
         parser.add_argument(
-            "--node_tables",
+            f"--{c.NODE_TABLES}",
             help="Comma-separated list of BigQuery tables for nodes.",
             type=lambda x: [y.strip() for y in str(x).split(",")],
             default=[],
         )
         parser.add_argument(
-            "--edge_tables",
+            f"--{c.EDGE_TABLES}",
             help="Comma-separated list of BigQuery tables for edges.",
             type=lambda x: [y.strip() for y in str(x).split(",")],
             default=[],
@@ -153,16 +153,10 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
             type=str,
             help="BigQuery dataset containing BigQuery tables."
         )
-        parser.add_argument(
-            "--bq_max_stream_count",
-            default=8192*2,
-            type=int,
-            help="Maximum number of streams to generate for a BigQuery table."
-        )
 
         # Optional/Other Parameters
         parser.add_argument(
-            "--debug",
+            f"--{c.DEBUG}",
             action="store_true",
             help="Enable verbose (debug) logging.",
         )
@@ -210,8 +204,8 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
 
         # 3. Prepare our collection of streams. We do this from the Spark driver
         #    so we can more easily spread the streams across the workers.
-        node_streams = flatten([bq.table("papers")]) # XXX
-        edge_streams = flatten([bq.table("citations")]) # XXX
+        node_streams = flatten(list(map(bq.table, args[c.NODE_TABLES])))
+        edge_streams = flatten(list(map(bq.table, args[c.EDGE_TABLES])))
         logger.info(
             f"prepared {len(node_streams):,} node streams, "
             f"{len(edge_streams):,} edge streams"
