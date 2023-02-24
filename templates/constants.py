@@ -3,6 +3,10 @@
 """
 Constants used as environment variables or command line arguments.
 """
+from . import __version__
+
+USER_AGENT = f"Neo4jBigQuery/{__version__} (GPN:Neo4j;)"
+
 BQ_PROJECT = "bq_project"
 BQ_DATASET = "bq_dataset"
 

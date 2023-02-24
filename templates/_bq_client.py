@@ -8,10 +8,13 @@ import logging
 from google.cloud.bigquery_storage import (
     BigQueryReadClient, DataFormat, ReadSession
 )
+from google.api_core.gapic_v1.client_info import ClientInfo
 
 import pandas as pd
 import pyarrow as pa
 import neo4j_arrow as na
+
+from .constants import USER_AGENT
 
 from typing import (
     cast, Any, Dict, Generator, List, NamedTuple, Optional, Union, Tuple
@@ -35,6 +38,7 @@ class BigQuerySource:
     of streams that the BigQueryReadClient can fetch.
     """
     client: Optional[BigQueryReadClient] = None
+    client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT) # type: ignore
 
     def __init__(self, project_id: str, dataset: str, *,
                  data_format: int = DataFormat.ARROW,
@@ -69,7 +73,7 @@ class BigQuerySource:
         of the table name and the list of its streams.
         """
         if self.client is None:
-            self.client = BigQueryReadClient()
+            self.client = BigQueryReadClient(client_info=self.client_info)
 
         read_session = ReadSession(
             table=f"{self.basepath}/tables/{table}",
@@ -87,11 +91,12 @@ class BigQuerySource:
 
     def consume_stream(self, bq_stream: BQStream) -> DataStream:
         """
-        Generate a stream
+        Generate a stream of structured data (Arrow or Avro) from a BigQuery
+        table using the Storate Read API.
         """
         table, stream = bq_stream
         if getattr(self, "client", None) is None:
-            self.client = BigQueryReadClient()
+            self.client = BigQueryReadClient(client_info=self.client_info)
 
         rows = (
             cast(BigQueryReadClient, self.client)

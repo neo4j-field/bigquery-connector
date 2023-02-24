@@ -213,9 +213,10 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
 
         # 4. Begin our Graph import.
         result = neo4j.start(force=True) # TODO: force should be an argument
-        logger.info(f"starting import: {result}")
+        logger.info(f"starting import for {result.get('name', graph.name)}")
 
         # 5. Load our Nodes via PySpark workers.
+        nodes_start = time.time()
         cnt, size = (
             sc
             .parallelize(node_streams)
@@ -224,14 +225,22 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
             .reduce(tuple_sum)
         )
         logger.info(
-            f"imported {cnt:,} nodes (streamed ~{size / (1 << 20):.2f} MiB)"
+            f"streamed {cnt:,} nodes, ~{size / (1 << 20):.2f} MiB original size"
         )
 
         # 6. Signal we're done with Nodes before moving onto Edges.
         result = neo4j.nodes_done()
-        logger.info(f"signalled nodes complete: {result}")
+        duration = time.time() - nodes_start
+        total = result["node_count"]
+        logger.info(
+            f"signalled nodes complete, imported {total:,} nodes"
+            f" in {duration:.3f}s ({total/duration:.2f} nodes/s)"
+        )
+        if cnt != total:
+            logger.warn(f"sent {cnt} nodes, but imported {total}!")
 
         # 7. Now stream Edges via the PySpark workers.
+        edges_start = time.time()
         cnt, size = (
             sc
             .parallelize(edge_streams)
@@ -240,13 +249,20 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
             .reduce(tuple_sum)
         )
         logger.info(
-            f"imported {cnt:,} edges (streamed ~{size / (1 << 20):.2f} MiB)"
+            f"streamed {cnt:,} edges, ~{size / (1 << 20):.2f} MiB original size"
         )
 
         # 8. Signal we're done with Edges.
         result = neo4j.edges_done()
-        logger.info(f"signalled edges complete: {result}")
+        duration = time.time() - edges_start
+        total = result["relationship_count"]
+        logger.info(
+            f"signalled edges complete, imported {total:,} edges"
+            f" in {duration:.3f}s ({total/duration:.2f} edges/s)"
+        )
+        if cnt != total:
+            logger.warn(f"sent {cnt} edges, but imported {total}!")
 
         # 9. TODO: await import completion and GDS projection available
-        end_time = time.time()
-        logger.info(f"completed in {(end_time - start_time):.3f} seconds")
+        duration = time.time() - start_time
+        logger.info(f"completed in {duration:.3f} seconds")
