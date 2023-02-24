@@ -12,9 +12,21 @@ from pyspark.sql import SparkSession
 
 import neo4j_arrow as na
 from ._bq_client import BigQuerySource
-from . import util
+from . import constants, util
 
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+
+def load_model_from_gcs(uri: str) -> Optional[na.model.Graph]:
+    """
+    Attempt to load a Graph model from a GCS uri. Returns None on failure.
+    """
+    try:
+        import fsspec
+        with fsspec.open(uri, "rt") as f:
+            return na.model.Graph.from_json(f.read())
+    except Exception as e:
+        return None
 
 
 def send_nodes(client: na.Neo4jArrowClient,
@@ -44,11 +56,17 @@ def send_edges(client: na.Neo4jArrowClient,
 
 
 def tuple_sum(a: Tuple[int, int], b: Tuple[int, int]) -> Tuple[int, int]:
+    """
+    Reducing function for summing tuples of integers.
+    """
     return (a[0] + b[0], a[1] + b[1])
 
 
 def flatten(lists: List[List[Any]],
             fn: Optional[Callable[[Any], Any]] = None) -> List[Any]:
+    """
+    Flatten a list of lists, applying an optional function (fn) to the values.
+    """
     if not fn:
         fn = lambda x: x
     return [x for y in map(fn, lists) for x in y]
@@ -63,7 +81,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):
 
     @staticmethod
     def parse_bq_args(args: Dict[str, Any]) -> Dict[str, Any]:
-        return args # XXX finish me
+        return args # XXX finish me when the stored proc is available
 
     @staticmethod
     def parse_args(args: Optional[Sequence[str]] = None) -> Dict[str, Any]:
@@ -71,8 +89,12 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):
         parser.add_argument(
             "--graph_json",
             type=str,
-            required=True,
-            help="Path to a JSON representation of the Graph model.",
+            help="JSON-based representation of the Graph model.",
+        )
+        parser.add_argument(
+            f"--{constants.NEO4J_GRAPH_JSON_URI}",
+            type=str,
+            help="URI to a JSON representation of the Graph model.",
         )
         parser.add_argument(
             "--neo4j_host",
@@ -152,18 +174,26 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):
         logger = self.get_logger(spark=spark)
         start_time = time.time()
 
-        # 1. XXX Graph Model hardcoded for now...
-        graph = (
-            na.model.Graph(name="test", db="neo4j")
-            .with_node(na.model.Node(source="paper",
-                                     key_field="paper",
-                                     label_field="labels",
-                                     years="years"))
-            .with_edge(na.model.Edge(source="citations",
-                                     source_field="source",
-                                     target_field="target",
-                                     type_field="type"))
-        )
+        # 1. Load the Graph Model.
+        if args[constants.NEO4J_GRAPH_JSON]:
+            # Try loading a literal JSON-based model
+            graph = na.model.Graph.from_json(args[constants.NEO4J_GRAPH_JSON])
+        elif args[constants.NEO4J_GRAPH_JSON_URI]:
+            # Fall back to URI
+            uri = args[constants.NEO4J_GRAPH_JSON_URI]
+            graph = load_model_from_gcs(uri)
+            if not graph:
+                raise ValueError(f"failed to load graph from {uri}")
+        else:
+            # Give up :(
+            raise ValueError("missing graph data model uri or literal JSON")
+
+        # 1b. Override graph and/or database name.
+        if constants.NEO4J_GRAPH_NAME in args:
+            graph = graph.named(args[constants.NEO4J_GRAPH_NAME])
+        if constants.NEO4J_DB_NAME in args:
+            graph = graph.in_db(args[constants.NEO4J_DB_NAME])
+        logger.info(f"using graph model {graph.to_json()}")
 
         # 2. Initialize our clients for source and sink.
         neo4j = na.Neo4jArrowClient(args["neo4j_host"],
@@ -182,8 +212,8 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):
         node_streams = flatten([bq.table("papers")]) # XXX
         edge_streams = flatten([bq.table("citations")]) # XXX
         logger.info(
-            f"prepared {len(node_streams):,} node streams ({node_streams[:1]}),"
-            f" {len(edge_streams):,} edge streams ({edge_streams[:1]})"
+            f"prepared {len(node_streams):,} node streams, "
+            f"{len(edge_streams):,} edge streams"
         )
 
         # 4. Begin our Graph import.

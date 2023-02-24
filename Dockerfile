@@ -37,6 +37,7 @@ RUN mkdir -p "${PYTHONPATH}" \
         "google-cloud-bigquery-storage[pyarrow]>=2.18" \
         "graphdatascience==1.6" \
         "pyarrow>=4,<11" \
+        "fsspec[gcs]>=2023.1.0" \
     && pip cache purge
 
 ###############################################################
