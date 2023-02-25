@@ -31,7 +31,7 @@ The template has been tested with AuraDS and self-managed Neo4j.
 
 In either case, you most likely need to configure a GCP network to use
 [Private Google Access](https://cloud.google.com/vpc/docs/private-google-access)
-and possible Cloud NAT. (Cloud NAT is definitely needed for AuraDS.)
+and possibly Cloud NAT. (Cloud NAT is definitely needed for AuraDS.)
 
 ### Submitting a Job
 
@@ -80,6 +80,7 @@ BigQuery environments as needed.
   on the backlog.
 - All known caveats for populating GDS via Arrow Flight apply
   (e.g. node id formats, etc.).
+- Concurrency doesn't auto-tune.
 
 ## Copyright and Licensing
 
