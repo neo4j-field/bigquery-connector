@@ -1,0 +1,35 @@
+from .neo4j_gds_pb2 import Node, Edge, Property, PropertyValueType
+import pyarrow as pa
+
+from typing import Generator, Optional, Union
+
+Arrow = Union[pa.Table, pa.RecordBatch]
+
+
+def arrow_to_nodes(arrow: Arrow,
+                   label: Optional[str] = None) -> Generator[Node, None, None]:
+    """
+    Generate rows of Nodes (protobuf format) from an Apache Arrow-based record.
+
+    An optional "label" can be provided to hardcode a single node label in the
+    resulting output.
+    """
+    # TODO assert schema
+    # TODO schema nonsense for properties?
+    rows, cols = arrow.num_rows, arrow.num_columns
+    node_ids = arrow.column("nodeId")
+
+    labels: Union[List[str], pa.lib.ListArray]
+    if label:
+        # XXX naive approach
+        labels = [label for _ in range(rows)]
+    else:
+        labels = arrow.column("labels")
+
+    for row in range(rows):
+        node = Node()
+        node.node_id = node_ids[row].as_py()
+        for l in list(labels[row]):
+            node.labels.append(str(l))
+        # TODO properties
+        yield node
