@@ -80,7 +80,8 @@ BigQuery environments as needed.
   on the backlog.
 - All known caveats for populating GDS via Arrow Flight apply
   (e.g. node id formats, etc.).
-- Concurrency doesn't auto-tune.
+- Concurrency doesn't auto-tune. Current recommendation is to set
+  `neo4j_concurrency` to the number of AuraDS CPU / 2 at minimum.
 
 ## Copyright and Licensing
 
