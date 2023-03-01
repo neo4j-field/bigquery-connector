@@ -11,6 +11,7 @@ setup(
     install_requires=[
         "google-dataproc-templates == 0.0.3",
         "google-cloud-bigquery-storage[pyarrow] >= 2.18",
+        "neo4j_arrow @ https://github.com/neo4j-field/neo4j_arrow/archive/refs/tags/0.4.0.tar.gz",
     ],
     packages=find_packages(),
 )

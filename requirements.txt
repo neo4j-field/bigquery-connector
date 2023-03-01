@@ -31,7 +31,7 @@ multimethod==1.9.1
 mypy==1.0.1
 mypy-extensions==1.0.0
 neo4j==5.5.0
-neo4j-arrow==0.4.0
+neo4j_arrow @ https://github.com/neo4j-field/neo4j_arrow/archive/refs/tags/0.4.0.tar.gz
 numpy==1.24.2
 oauthlib==3.2.2
 packaging==23.0
