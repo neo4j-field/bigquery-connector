@@ -11,10 +11,17 @@ import pyarrow as pa
 from pyspark.sql import SparkSession
 
 import neo4j_arrow as na
-from ._bq_client import BigQuerySource
+
+from .bq_client import BigQuerySource
+from .vendored import strtobool
 from . import constants as c, util
 
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+
+__all__ = [
+    "BigQueryToNeo4jGDSTemplate",
+]
 
 
 def load_model_from_gcs(uri: str) -> Optional[na.model.Graph]:
@@ -81,11 +88,10 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
     """
 
     @staticmethod
-    def parse_bq_args(args: Dict[str, Any]) -> Dict[str, Any]:
-        return args # XXX finish me when the stored proc is available
-
-    @staticmethod
     def parse_args(args: Optional[Sequence[str]] = None) -> Dict[str, Any]:
+        # Try pulling out any BigQuery procedure environmental args.
+        bq_args = util.bq_params()
+
         parser = argparse.ArgumentParser()
         parser.add_argument(
             f"--{c.NEO4J_GRAPH_JSON}",
@@ -111,7 +117,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         parser.add_argument(
             f"--{c.NEO4J_USE_TLS}",
             default="True",
-            type=util.strtobool,
+            type=strtobool,
             help="Use TLS for encrypting Neo4j Arrow Flight connection.",
         )
         parser.add_argument(
@@ -162,7 +168,12 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         )
 
         ns: argparse.Namespace
-        ns, _ = parser.parse_known_args()
+        if bq_args:
+            # We're most likely running as a stored proc, so use that method.
+            ns, _ = parser.parse_known_args(bq_args)
+        else:
+            # Rely entirely on sys.argv and any provided args parameter.
+            ns, _ = parser.parse_known_args(args)
         return vars(ns)
 
     def run(self, spark: SparkSession, args: Dict[str, Any]) -> None:
@@ -236,7 +247,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
             .reduce(tuple_sum)
         )
         logger.info(
-            f"streamed {cnt:,} nodes, ~{size / (1 << 20):.2f} MiB original size"
+            f"streamed {cnt:,} nodes, ~{size / (1<<20):,.2f} MiB original size"
         )
 
         # 6. Signal we're done with Nodes before moving onto Edges.
@@ -245,7 +256,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         total = result["node_count"]
         logger.info(
             f"signalled nodes complete, imported {total:,} nodes"
-            f" in {duration:.3f}s ({total/duration:.2f} nodes/s)"
+            f" in {duration:,.3f}s ({total/duration:,.2f} nodes/s)"
         )
         if cnt != total:
             logger.warn(f"sent {cnt} nodes, but imported {total}!")
@@ -260,7 +271,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
             .reduce(tuple_sum)
         )
         logger.info(
-            f"streamed {cnt:,} edges, ~{size / (1 << 20):.2f} MiB original size"
+            f"streamed {cnt:,} edges, ~{size / (1<<20):,.2f} MiB original size"
         )
 
         # 8. Signal we're done with Edges.
@@ -269,11 +280,11 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         total = result["relationship_count"]
         logger.info(
             f"signalled edges complete, imported {total:,} edges"
-            f" in {duration:.3f}s ({total/duration:.2f} edges/s)"
+            f" in {duration:,.3f}s ({total/duration:,.2f} edges/s)"
         )
         if cnt != total:
             logger.warn(f"sent {cnt} edges, but imported {total}!")
 
         # 9. TODO: await import completion and GDS projection available
         duration = time.time() - start_time
-        logger.info(f"completed in {duration:.3f} seconds")
+        logger.info(f"completed in {duration:,.3f} seconds")

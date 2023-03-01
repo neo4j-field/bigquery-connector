@@ -10,7 +10,6 @@ from google.cloud.bigquery_storage import (
 )
 from google.api_core.gapic_v1.client_info import ClientInfo
 
-import pandas as pd
 import pyarrow as pa
 import neo4j_arrow as na
 
@@ -21,7 +20,7 @@ from typing import (
 )
 
 Arrow = Union[pa.Table, pa.RecordBatch]
-DataStream = Generator[Union[Arrow, pd.DataFrame], None, None]
+DataStream = Generator[Arrow, None, None]
 
 
 class BQStream(NamedTuple):
@@ -109,8 +108,9 @@ class BigQuerySource:
                 schema = arrow.schema.with_metadata({"_table": table})
                 yield arrow.from_arrays(arrow.columns, schema=schema)
         elif self.data_format == DataFormat.AVRO:
-            for page in rows.pages:
+            raise RuntimeError("AVRO support unfinished")
+            #for page in rows.pages:
                 # TODO: schema updates to specify the source table
-                yield page.to_dataframe()
+                #yield page.to_dataframe()
         else:
             raise ValueError("invalid data format")

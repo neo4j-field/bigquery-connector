@@ -7,7 +7,7 @@ from . import Node, arrow_to_nodes, arrow_to_edges
 import pyarrow as pa
 
 
-def test_arrow_to_nodes():
+def test_arrow_to_nodes() -> None:
     """
     Test converting Apache Arrow formats into Node protobufs.
 
@@ -36,7 +36,7 @@ def test_arrow_to_nodes():
         assert list(node.labels) == table.column("labels")[i].as_py()
 
 
-def test_arrow_to_edges():
+def test_arrow_to_edges() -> None:
     """
     Test converting Apache Arrow formats into Edge protobufs.
 

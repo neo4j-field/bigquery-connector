@@ -1,7 +1,7 @@
-from .neo4j_gds_pb2 import Node, Edge, Property, PropertyValueType
+from . import Node, Edge, Property, PropertyValueType
 import pyarrow as pa
 
-from typing import Generator, Optional, Union
+from typing import Generator, List, Optional, Union
 
 Arrow = Union[pa.Table, pa.RecordBatch]
 
