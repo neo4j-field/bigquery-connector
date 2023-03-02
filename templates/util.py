@@ -6,7 +6,7 @@ Utility functions.
 import os
 import json
 
-from typing import Dict, List
+from typing import cast, Dict, List
 
 
 BQ_PARAM_PREFIX = "BIGQUERY_PROC_PARAM."
@@ -35,3 +35,26 @@ def bq_params() -> List[str]:
                 # blind cast of the original
                 values.append(str(v.strip()))
     return values
+
+
+def fetch_secret(secret_id: str) -> Dict[str, str]:
+    """
+    Retrieve and decode a secret from Google Secret Manager.
+
+    XXX We assume the operator has created a JSON payload containing valid
+    parameters for our pipeline.
+    """
+    try:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        request = secretmanager.AccessSecretVersionRequest(name=secret_id)
+        secret = client.access_secret_version(request=request)
+        payload = secret.payload.data.decode("utf8")
+
+        data = json.loads(payload)
+        if isinstance(data, dict):
+            # XXX assume Dict[str, str] for now. Should parse more explicitly.
+            return cast(Dict[str, str], data)
+    except Exception as e:
+        print(f"failed to get secret {secret_id}: {e}")
+    return {}

@@ -106,6 +106,11 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
             help="URI to a JSON representation of the Graph model.",
         )
         parser.add_argument(
+            f"--{c.NEO4J_SECRET}",
+            help="Google Secret to use for populating other values",
+            type=str,
+        )
+        parser.add_argument(
             f"--{c.NEO4J_HOST}",
             help="Hostname or IP address of Neo4j server.",
             default="localhost",
@@ -215,7 +220,16 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
             graph = graph.in_db(args[c.NEO4J_DB_NAME])
         logger.info(f"using graph model {graph.to_json()}")
 
-        # 2. Initialize our clients for source and sink.
+        # 2a. Fetch our secret if any
+        if c.NEO4J_SECRET in args:
+            logger.info(f"fetching secret {args[c.NEO4J_SECRET]}")
+            secret = util.fetch_secret(args[c.NEO4J_SECRET])
+            if not secret:
+                logger.warn("failed to fetch secret, falling back to params")
+            else:
+                args.update(secret)
+
+        # 2b. Initialize our clients for source and sink.
         neo4j = na.Neo4jArrowClient(args[c.NEO4J_HOST],
                                     graph.name,
                                     port=args[c.NEO4J_PORT],
