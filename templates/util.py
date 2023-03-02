@@ -31,8 +31,12 @@ def bq_params() -> List[str]:
             val = json.loads(v)
             if isinstance(val, str):
                 values.append(val)
+            elif isinstance(val, list):
+                # XXX for now, repack into a single string until arg parsing
+                # supports native lists
+                values.append(",".join(val))
             else:
-                # blind cast of the original
+                # Blind cast of the original. Yolo.
                 values.append(str(v.strip()))
     return values
 
