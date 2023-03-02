@@ -96,6 +96,24 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
 
         parser = argparse.ArgumentParser()
         parser.add_argument(
+            f"--{c.NEO4J_GRAPH_NAME}",
+            type=str,
+            help=(
+                "Name for the resulting Graph projection. (Will override what "
+                "may be provided in the model.)"
+            ),
+        )
+        parser.add_argument(
+            f"--{c.NEO4J_DB_NAME}",
+            type=str,
+            help=(
+                "Name of the database to host the graph projection. (Will "
+                "override what may be provided in the model.)"
+            ),
+            default="neo4j",
+        )
+
+        parser.add_argument(
             f"--{c.NEO4J_GRAPH_JSON}",
             type=str,
             help="JSON-based representation of the Graph model.",
