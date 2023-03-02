@@ -11,13 +11,13 @@ Dataproc onto the Spark environment.
 To build:
 
 ```
-$ docker build -t "gcr.io/neo4j-se-team-201905/dataproc-pyarrow:0.1.0" .
+$ docker build -t "gcr.io/your-gcp-project/neo4j-bigquery-connector:0.3.0" .
 ```
 
 Then push to Google Container Registry (GCR):
 
 ```
-$ docker push "gcr.io/neo4j-se-team-201905/dataproc-pyarrow:0.1.0"
+$ docker push "gcr.io/your-gcp-project/neo4j-bigquery-connector:0.3.0"
 ```
 
 > Note: you will need to enable your local gcloud tooling to help
@@ -55,18 +55,16 @@ PROPERTIES="${PROPERTIES},spark.dynamicAllocation.minExecutors=${SPARK_EXE_COUNT
 gcloud dataproc batches submit pyspark \
     --region="europe-west1" \
     --version="2.0" \
-    --deps-bucket="gs://neo4j_voutila" \
-    --container-image="gcr.io/neo4j-se-team-201905/dataproc-pyarrow:${VERSION}" \
+    --deps-bucket="gs://your-bucket" \
+    --container-image="gcr.io/your-gcp-project/neo4j-bigquery-connector:0.3.0" \
     --properties="${PROPERTIES}" \
     main.py -- \
-    --graph_uri="gs://neo4j_voutila/gcdemo/mag240_bq.json" \
-    --neo4j_host="abcdefgh.databases.neo4j.io" \
-    --neo4j_password="YOUR_SUPER_SECRET_PASSWORD" \
-    --bq_project="neo4j-se-team-201905" \
-    --bq_dataset="gcdemo" \
-    --node_tables="papers2,authors,institution" \
-    --edge_tables="citations2,authorship2,affiliation" \
-    --neo4j_concurrency="41"
+    --graph_uri="gs://your-bucket/folder/model.json" \
+    --neo4j_secret="projects/123456/secrets/neo4j-bigquery/versions/1" \
+    --bq_project="your-gcp-project" \
+    --bq_dataset="your_bq_dataset" \
+    --node_tables="papers,authors,institution" \
+    --edge_tables="citations,authorship,affiliation"
 ```
 
 The key parts to note:
@@ -102,10 +100,10 @@ CREATE OR REPLACE PROCEDURE
     bq_dataset STRING,
     node_tables ARRAY<STRING>,
     edge_tables ARRAY<STRING>)
-WITH CONNECTION `my-gcp-project.eu.my-spark-connection` OPTIONS (
+WITH CONNECTION `your-gcp-project.eu.my-spark-connection` OPTIONS (
     engine='SPARK',
     runtime_version='2.0',
-    container_image='eu.gcr.io/my-gcp-project/neo4j-bigquery-connector:0.3.0',
+    container_image='eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.3.0',
     properties=[],
     description="Project a graph from BigQuery into Neo4j AuraDS or GDS.")
 LANGUAGE python AS R"""
@@ -158,14 +156,14 @@ An example BigQuery SQL statement that calls the procedure:
 
 ```
 DECLARE graph_name STRING DEFAULT "test-graph";
-DECLARE graph_uri STRING DEFAULT "gs://mybucket/folder/model.json";
+DECLARE graph_uri STRING DEFAULT "gs://your-bucket/folder/model.json";
 DECLARE neo4j_secret STRING DEFAULT "projects/123456/secrets/neo4j-bigquery/versions/1";
-DECLARE bq_project STRING DEFAULT "my-gcp-project";
-DECLARE bq_dataset STRING DEFAULT "my_bq_dataset";
+DECLARE bq_project STRING DEFAULT "your-gcp-project";
+DECLARE bq_dataset STRING DEFAULT "your_bq_dataset";
 DECLARE node_tables ARRAY<STRING> DEFAULT ["papers", "authors", "institution"];
 DECLARE edge_tables ARRAY<STRING> DEFAULT ["citations", "authorship", "affiliation"];
 
-CALL `my-gcp-project.my_bq_dataset.neo4j_gds_graph_project`(
+CALL `your-gcp-project.your_bq_dataset.neo4j_gds_graph_project`(
     graph_name, graph_uri, neo4j_secret, bq_project, bq_dataset,
     node_tables, edge_tables);
 ```
@@ -177,7 +175,8 @@ CALL `my-gcp-project.my_bq_dataset.neo4j_gds_graph_project`(
 - All known caveats for populating GDS via Arrow Flight apply
   (e.g. node id formats, etc.).
 - Concurrency doesn't auto-tune. Current recommendation is to set
-  `neo4j_concurrency` to the number of AuraDS CPU / 2 at minimum.
+  `neo4j_concurrency` to the number of AuraDS CPU / 2 at minimum, but
+  it's not clear how much it helps.
 
 ## Copyright and Licensing
 
