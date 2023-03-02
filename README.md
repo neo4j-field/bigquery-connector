@@ -33,7 +33,11 @@ In either case, you most likely need to configure a GCP network to use
 [Private Google Access](https://cloud.google.com/vpc/docs/private-google-access)
 and possibly Cloud NAT. (Cloud NAT is definitely needed for AuraDS.)
 
-### Submitting a Job
+### Submitting a Dataproc Serverless Job
+
+If you're looking to just use the Dataproc capabilities or looking to
+do some quick testing, you can submit a batch job directly to
+Dataproc.
 
 Using the `gcloud` tooling, use a shell script like:
 
@@ -74,10 +78,17 @@ The key parts to note:
 Customize (1) for your GCP environment and (2) for your AuraDS and
 BigQuery environments as needed.
 
+> Note: you can put configuration values in a JSON document stored in
+> a Google Secret Manager secret (that's a mouthful). Us the
+> `--neo4j_secret` parameter to pass in the full resource id (which
+> should include the secret version number).
+
+## Configuring a Google BigQuery Stored Procedure
+
+> docs coming soon :)
+
 ## Current Caveats
 
-- Passwords should be stuck into _Google Secret Manager_, that part is
-  on the backlog.
 - All known caveats for populating GDS via Arrow Flight apply
   (e.g. node id formats, etc.).
 - Concurrency doesn't auto-tune. Current recommendation is to set
