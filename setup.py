@@ -1,19 +1,40 @@
 from setuptools import find_packages, setup
+from templates import __version__
+
+with open("README.md", "r", encoding="utf-8") as f:
+    long_description = f.read()
+
+with open("requirements.txt", "r") as f:
+    reqs = f.read().splitlines()
 
 setup(
     name="neo4j-bigquery-connector",
-    version="0.2.0",
+    version=__version__,
+
     url="https://github.com/neo4j-field/dataproc-templates",
-    maintainer="Dave Voutila",
-    maintainer_email="dave.voutila@neotechnology.com",
+    author="Neo4j",
+    author_email="dave.voutila@neo4j.com",
+
+    description="A connector for building a Neo4j Graph from Google BigQuery",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+
     license="Apache License 2.0",
 
-    install_requires=[
-        "google-dataproc-templates >= 0.0.1",
-        "google-cloud-bigquery-storage[pyarrow] >= 2.18",
-        "neo4j_arrow @ https://github.com/neo4j-field/neo4j_arrow/archive/refs/tags/0.4.0.tar.gz",
-        "graphdatascience == 1.6",
-        "fsspec[gcs] >= 2023.1.0",
+    classifiers = [
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Developers",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3 :: Only",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Topic :: Database",
+        "Typing :: Typed",
     ],
+    python_requires=">=3.8",
+    install_requires=reqs,
     packages=find_packages(),
 )

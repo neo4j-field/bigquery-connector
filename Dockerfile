@@ -30,16 +30,13 @@ USER spark
 FROM base AS pybase
 ENV PYSPARK_PYTHON=/usr/bin/python3 \
     PYTHONPATH=/home/spark/packages
+COPY requirements.txt /home/spark
 RUN mkdir -p "${PYTHONPATH}" \
-    && pip install --target "${PYTHONPATH}" \
-        "neo4j_arrow@https://github.com/neo4j-field/neo4j_arrow/archive/refs/tags/0.4.0.tar.gz" \
-        "google-dataproc-templates>=0.0.1" \
-        "google-cloud-bigquery-storage[pyarrow]>=2.18" \
-        "graphdatascience==1.6" \
-        "pyarrow>=4,<11" \
-        "fsspec[gcs]>=2023.1.0" \
+    && pip install --target "${PYTHONPATH}" -r /home/spark/requirements.txt \
     && pip cache purge
+
 
 ###############################################################
 FROM pybase
+COPY model "${PYTHONPATH}"/model
 COPY templates "${PYTHONPATH}"/templates
