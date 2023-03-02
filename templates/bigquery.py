@@ -91,6 +91,8 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
     def parse_args(args: Optional[Sequence[str]] = None) -> Dict[str, Any]:
         # Try pulling out any BigQuery procedure environmental args.
         bq_args = util.bq_params()
+        if bq_args:
+            print(f"using BigQuery args: {bq_args}")
 
         parser = argparse.ArgumentParser()
         parser.add_argument(
@@ -194,7 +196,10 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         # 1. Load the Graph Model.
         if args[c.NEO4J_GRAPH_JSON]:
             # Try loading a literal JSON-based model
-            graph = na.model.Graph.from_json(args[c.NEO4J_GRAPH_JSON])
+            import json
+            graph = na.model.Graph.from_json(
+                json.loads(args[c.NEO4J_GRAPH_JSON])
+            )
         elif args[c.NEO4J_GRAPH_JSON_URI]:
             # Fall back to URI
             uri = args[c.NEO4J_GRAPH_JSON_URI]

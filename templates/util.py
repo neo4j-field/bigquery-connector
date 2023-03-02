@@ -4,6 +4,8 @@
 Utility functions.
 """
 import os
+import json
+
 from typing import Dict, List
 
 
@@ -24,5 +26,8 @@ def bq_params() -> List[str]:
     for k, v in env.items():
         if k.startswith(BQ_PARAM_PREFIX):
             values.append(f"--{k.replace(BQ_PARAM_PREFIX, '')}")
-            values.append(v.strip())
+
+            # XXX TODO: properly handle the fact we get JSON data here
+            val = str(json.loads(v.strip()))
+            values.append(val)
     return values
