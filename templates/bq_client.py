@@ -5,6 +5,14 @@ Helper classes for interacting with BigQuery via the Storage API.
 """
 import logging
 
+### XXX this is hell...truly I am in hell.
+import sys
+print(f"original path: {sys.path}")
+newpath = [p for p in sys.path if not "spark-bigquery-support" in p]
+sys.path = newpath
+print(f"new path: {sys.path}")
+#######
+
 from google.cloud.bigquery_storage import (
     BigQueryReadClient, DataFormat, ReadSession
 )
