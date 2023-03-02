@@ -10,7 +10,7 @@ __all__ = [
     "__author__",
 ]
 __author__ = "Neo4j"
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from . import constants, util
 from .bq_client import BigQuerySource
