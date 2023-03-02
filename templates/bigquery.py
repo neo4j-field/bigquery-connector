@@ -196,10 +196,8 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         # 1. Load the Graph Model.
         if args[c.NEO4J_GRAPH_JSON]:
             # Try loading a literal JSON-based model
-            import json
-            graph = na.model.Graph.from_json(
-                json.loads(args[c.NEO4J_GRAPH_JSON])
-            )
+            json_str = args[c.NEO4J_GRAPH_JSON]
+            graph = na.model.Graph.from_json(json_str)
         elif args[c.NEO4J_GRAPH_JSON_URI]:
             # Fall back to URI
             uri = args[c.NEO4J_GRAPH_JSON_URI]

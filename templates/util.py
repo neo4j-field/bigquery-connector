@@ -28,6 +28,10 @@ def bq_params() -> List[str]:
             values.append(f"--{k.replace(BQ_PARAM_PREFIX, '')}")
 
             # XXX TODO: properly handle the fact we get JSON data here
-            val = str(json.loads(v.strip()))
-            values.append(val)
+            val = json.loads(v)
+            if isinstance(val, str):
+                values.append(val)
+            else:
+                # blind cast of the original
+                values.append(str(v.strip()))
     return values
