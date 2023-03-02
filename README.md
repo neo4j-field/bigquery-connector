@@ -85,7 +85,93 @@ BigQuery environments as needed.
 
 ## Configuring a Google BigQuery Stored Procedure
 
-> docs coming soon :)
+In short, you'll want to familiarize yourself with the [Stored
+procedures for Apache
+Spark](https://cloud.google.com/bigquery/docs/spark-procedures)
+documentation. Assuming you've got your environment properly
+configured and enrolled in the preview program to use Spark for stored
+procedures, you need to create your stored procedure. For example:
+
+```
+CREATE OR REPLACE PROCEDURE
+  `my-gcp-project.my_bigquery_dataset.neo4j_gds_graph_project`(
+    graph_name STRING,
+    graph_uri STRING,
+    neo4j_secret STRING,
+    bq_project STRING,
+    bq_dataset STRING,
+    node_tables ARRAY<STRING>,
+    edge_tables ARRAY<STRING>)
+WITH CONNECTION `my-gcp-project.eu.my-spark-connection` OPTIONS (
+    engine='SPARK',
+    runtime_version='2.0',
+    container_image='eu.gcr.io/my-gcp-project/neo4j-bigquery-connector:0.3.0',
+    properties=[],
+    description="Project a graph from BigQuery into Neo4j AuraDS or GDS.")
+LANGUAGE python AS R"""
+
+import sys
+print(f"original path: {sys.path}")
+newpath = [p for p in sys.path if not "spark-bigquery-support" in p]
+sys.path = newpath
+print(f"new path: {sys.path}")
+
+from pyspark.sql import SparkSession
+from templates import BigQueryToNeo4jGDSTemplate
+
+spark = (
+      SparkSession
+      .builder
+      .appName("Neo4j BigQuery Connector")
+      .getOrCreate()
+)
+
+template = BigQueryToNeo4jGDSTemplate()
+args = template.parse_args()
+template.run(spark, args)
+
+""";
+```
+
+Some details on the inputs:
+
+- `graph_name` -- the resulting name of the graph projection in AuraDS
+- `graph_uri` -- the GCS uri pointing to a JSON file describing the
+  [graph model]
+  (https://github.com/neo4j-field/dataflow-flex-pyarrow-to-gds#the-graph-model)
+  for your data
+- `neo4j_secret` -- a Google Secret Manager secret resource id
+  containing a JSON blob with additional arguments:
+  * `neo4j_user` -- name of the Neo4j user to connect as
+  * `neo4j_password` -- password for the given user
+  * `neo4j_host` -- hostname (_not Bolt uri_) of the AuraDS instance
+- `bq_project` -- GCP project id owning the BigQuery source data
+- `bq_dataset` -- BigQuery dataset name for the source data
+- `node_tables` -- an `ARRAY<STRING>` of BigQuery table names representing nodes
+- `edge_tables` -- an `ARRAY<STRING>` of BigQuery table names representing edges
+
+> Note: you can leverage the fact the secret payload is JSON to tuck
+> in any additional, supported arguments not exposed by your stored
+> procedure. (For instance, you could override the default
+> `neo4j_concurrency` setting.)
+
+An example BigQuery SQL statement that calls the procedure:
+
+```
+DECLARE graph_name STRING DEFAULT "test-graph";
+DECLARE graph_uri STRING DEFAULT "gs://mybucket/folder/model.json";
+DECLARE neo4j_secret STRING DEFAULT "projects/123456/secrets/neo4j-bigquery/versions/1";
+DECLARE bq_project STRING DEFAULT "my-gcp-project";
+DECLARE bq_dataset STRING DEFAULT "my_bq_dataset";
+DECLARE node_tables ARRAY<STRING> DEFAULT ["papers", "authors", "institution"];
+DECLARE edge_tables ARRAY<STRING> DEFAULT ["citations", "authorship", "affiliation"];
+
+CALL `my-gcp-project.my_bq_dataset.neo4j_gds_graph_project`(
+    graph_name, graph_uri, neo4j_secret, bq_project, bq_dataset,
+    node_tables, edge_tables);
+```
+
+> Detailed documentation coming soon :-)
 
 ## Current Caveats
 
