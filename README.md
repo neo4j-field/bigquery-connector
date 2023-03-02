@@ -137,8 +137,7 @@ Some details on the inputs:
 
 - `graph_name` -- the resulting name of the graph projection in AuraDS
 - `graph_uri` -- the GCS uri pointing to a JSON file describing the
-  [graph model]
-  (https://github.com/neo4j-field/dataflow-flex-pyarrow-to-gds#the-graph-model)
+  [graph model](https://github.com/neo4j-field/dataflow-flex-pyarrow-to-gds#the-graph-model)
   for your data
 - `neo4j_secret` -- a Google Secret Manager secret resource id
   containing a JSON blob with additional arguments:
