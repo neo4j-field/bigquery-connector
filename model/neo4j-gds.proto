@@ -1,4 +1,6 @@
-//
+// Copyright (c) "Neo4j"
+// Neo4j Sweden AB [https://neo4j.com]
+
 syntax = "proto2";
 
 package neo4j_gds;
@@ -6,31 +8,15 @@ package neo4j_gds;
 // XXX: note that we use signed integers as ids for now as BQ INTEGER types
 //      don't natively support uint64!
 
-enum PropertyValueType {
-     TYPE_STRING = 0;
-     TYPE_INTEGER = 1;
-     TYPE_DOUBLE = 2;
-}
-
-message Property {
-        required string name = 1;
-        required PropertyValueType value_type = 2;
-        oneof value {
-              string value_str = 3;
-              int64 value_int = 4;
-              double value_dbl = 5;
-        }
-}
-
 message Node {
         required int64 node_id = 1;
         repeated string labels = 2;
-        repeated Property properties = 3;
+        optional string properties = 3;
 }
 
 message Edge {
         required int64 source_node_id = 1;
         required int64 target_node_id = 2;
         required string type = 3;
-        repeated Property properties = 4;
+        optional string properties = 4;
 }

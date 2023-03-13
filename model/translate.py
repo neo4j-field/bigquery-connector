@@ -1,5 +1,7 @@
-from . import Node, Edge, Property, PropertyValueType
+import json
 import pyarrow as pa
+
+from . import Node, Edge #, Property, PropertyValueType
 
 from typing import Generator, List, Optional, Union
 
@@ -26,12 +28,20 @@ def arrow_to_nodes(arrow: Arrow,
     else:
         labels = arrow.column("labels")
 
+    # XXX naieve approach using field names for now
+    # N.b. We need to rely on the schema if using RecordBatches.
+    props = [n for n in arrow.schema.names if n not in ["nodeId", "labels"]]
+
     for row in range(rows):
         node = Node()
         node.node_id = node_ids[row].as_py()
         for l in list(labels[row]):
             node.labels.append(str(l))
-        # TODO properties
+        items = [(key, arrow.column(key)[row].as_py()) for key in props]
+        if items:
+            node.properties = json.dumps(dict(items))
+        else:
+            node.properties = "{}" # "empty" JSON Object
         yield node
 
 
@@ -44,10 +54,21 @@ def arrow_to_edges(arrow: Arrow) -> Generator[Edge, None, None]:
     target_node_ids = arrow.column("targetNodeId")
     types = arrow.column("relationshipType")
 
+    # XXX naieve approach using field names for now
+    # N.b. We need to rely on the schema if using RecordBatches.
+    props = [
+        n for n in arrow.schema.names
+        if n not in ["sourceNodeId", "targetNodeId", "relationshipType"]
+    ]
+
     for row in range(rows):
         edge = Edge()
         edge.source_node_id = source_node_ids[row].as_py()
         edge.target_node_id = target_node_ids[row].as_py()
         edge.type = types[row].as_py()
-        # TODO properties
+        items = [(key, arrow.column(key)[row].as_py()) for key in props]
+        if items:
+            edge.properties = json.dumps(dict(items))
+        else:
+            edge.properties = "{}" # "empty" JSON Object
         yield edge
