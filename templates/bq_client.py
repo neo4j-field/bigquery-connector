@@ -14,9 +14,13 @@ print(f"new path: {sys.path}")
 #######
 
 from google.cloud.bigquery_storage import (
-    BigQueryReadClient, DataFormat, ReadSession
+    BigQueryReadClient, BigQueryWriteClient, DataFormat, ReadSession
 )
+from google.cloud.bigquery_storage_v1 import types, writer
+from google.protobuf import descriptor_pb2, wrappers_pb2
+
 from google.api_core.gapic_v1.client_info import ClientInfo
+from google.api_core.future import Future
 
 import pyarrow as pa
 import neo4j_arrow as na
@@ -122,3 +126,86 @@ class BigQuerySource:
                 #yield page.to_dataframe()
         else:
             raise ValueError("invalid data format")
+
+
+class BigQuerySink:
+    """
+    Wrapper around a BigQuery table. Uses the Storage API to write data.
+    """
+    client: Optional[BigQueryWriteClient] = None
+    client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT) # type: ignore
+
+    def __init__(self, project_id: str, dataset: str, table: str,
+                 descriptor: descriptor_pb2.DescriptorProto):
+        self.project_id = project_id
+        self.dataset = dataset
+        self.table = table
+        self.parent = BigQueryWriteClient.table_path(project_id, dataset, table)
+
+        # state tracking
+        self.futures: List[Future] = []
+        self.offset: int = 0
+        self.stream: Optional[Any] = None
+        self.stream_name: Optional[str] = None
+
+        # XXX maybe move this?
+        proto_schema = types.ProtoSchema()
+        proto_schema.proto_descriptor = descriptor
+        self.proto_data = types.AppendRowsRequest.ProtoData()
+        self.proto_data.write_schema = proto_schema
+
+
+    def append_rows(self, rows: List[bytes]) -> None:
+        if self.client is None:
+            # Latent client creation to support serialization.
+            self.client = BigQueryWriteClient(client_info=self.client_info)
+
+        if self.stream is None:
+            #
+            # Each sink will work with 1 stream. It should be able to append
+            # repeatedly to the same stream.
+            #
+            write_stream_type = types.WriteStream()
+            write_stream_type.type_ = cast(
+                types.WriteStream.Type, types.WriteStream.Type.PENDING
+            )
+            write_stream = self.client.create_write_stream(
+                parent=self.parent, write_stream=write_stream_type,
+            )
+            self.stream_name = write_stream.name
+            req_template = types.AppendRowsRequest()
+            req_template.write_stream = self.stream_name
+            self.stream = writer.AppendRowsStream(self.client, req_template)
+
+        # Process our batch.
+        # XXX For now, we ignore any API limits and hope for the best.
+        proto_rows = types.ProtoRows()
+        for row in rows:
+            proto_rows.serialized_rows.append(row)
+
+        request = types.AppendRowsRequest()
+        request.offset = cast(wrappers_pb2.Int64Value, self.offset)
+        proto_data = types.AppendRowsRequest.ProtoData()
+        proto_data.rows = proto_rows
+        request.proto_rows = proto_data
+
+        future = self.stream.send(request)
+        self.futures.append(future)
+        self.offset += len(rows)
+
+    def finalize_write_stream(self) -> None:
+        """
+        Finalize any pending write stream. If no client or stream, this is a
+        no-op and just warns.
+        """
+        if self.client is None or self.stream is None:
+            print("no active client/stream")
+            return
+        self.client.finalize_write_stream(name=self.stream_name)
+
+    def wait_for_completion(self, timeout_secs: int) -> None:
+        for future in self.futures:
+            try:
+                future.result(timeout=timeout_secs) # type: ignore
+            except Exception as e:
+                pass

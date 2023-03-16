@@ -2,6 +2,7 @@
 # Neo4j Sweden AB [https://neo4j.com]
 __all__ = [
     "BigQueryToNeo4jGDSTemplate",
+    "BigQuerySink",
     "BigQuerySource",
     "constants",
     "strtobool",

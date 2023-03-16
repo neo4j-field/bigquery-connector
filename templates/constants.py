@@ -9,6 +9,7 @@ USER_AGENT = f"Neo4jBigQuery/{__version__} (GPN:Neo4j;)"
 
 BQ_PROJECT = "bq_project"
 BQ_DATASET = "bq_dataset"
+BQ_TABLE = "bq_table"
 
 DEBUG = "debug"
 

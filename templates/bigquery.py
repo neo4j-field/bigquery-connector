@@ -2,6 +2,7 @@
 # Neo4j Sweden AB [https://neo4j.com]
 import argparse
 import itertools
+import sys
 import time
 
 from google.cloud.bigquery_storage import BigQueryReadClient, types
@@ -12,7 +13,7 @@ from pyspark.sql import SparkSession
 
 import neo4j_arrow as na
 
-from .bq_client import BigQuerySource
+from .bq_client import BigQuerySource, BigQuerySink, BQStream
 from .vendored import strtobool
 from . import constants as c, util
 
@@ -78,6 +79,178 @@ def flatten(lists: List[List[Any]],
     if not fn:
         fn = lambda x: x
     return [x for y in map(fn, lists) for x in y]
+
+
+def to_stream_fn(mode: str, bq: BigQuerySource,
+                 graph: na.model.Graph) -> Callable[[str], List[BQStream]]:
+    """
+    Create a function that generates BigQuery streams with optional field
+    filtering.
+    """
+    def _to_stream(table_name: str) -> List[BQStream]:
+        fields: List[str] = []
+        if mode == "node":
+            node = graph.node_for_src(table_name)
+            if node:
+                for key in node.properties().keys():
+                    fields.append(key)
+                if node.key_field:
+                    fields.append(node.key_field)
+                if node.label_field:
+                    fields.append(node.label_field)
+        elif mode == "edge":
+            edge = graph.edge_for_src(table_name)
+            if edge:
+                for key in edge.properties().keys():
+                    fields.append(key)
+                if edge.source_field:
+                    fields.append(edge.source_field)
+                if edge.target_field:
+                    fields.append(edge.target_field)
+                if edge.type_field:
+                    fields.append(edge.type_field)
+        else:
+            raise ValueError("invalid mode. expected 'node' or 'edge'.")
+        return bq.table(table_name, fields=fields)
+    return _to_stream
+
+class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
+    """
+    TBA
+    """
+    @staticmethod
+    def parse_args(args: Optional[Sequence[str]] = None) -> Dict[str, Any]:
+        # Try pulling out any BigQuery procedure environmental args.
+        bq_args = util.bq_params()
+        if bq_args:
+            print(f"using BigQuery args: {bq_args}")
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            f"--{c.NEO4J_GRAPH_NAME}",
+            type=str,
+            help=(
+                "Name for the resulting Graph projection. (Will override what "
+                "may be provided in the model.)"
+            ),
+        )
+        parser.add_argument(
+            f"--{c.NEO4J_DB_NAME}",
+            type=str,
+            help=(
+                "Name of the database to host the graph projection. (Will "
+                "override what may be provided in the model.)"
+            ),
+            default="neo4j",
+        )
+
+        parser.add_argument(
+            f"--{c.NEO4J_SECRET}",
+            help="Google Secret to use for populating other values",
+            type=str,
+        )
+        parser.add_argument(
+            f"--{c.NEO4J_HOST}",
+            help="Hostname or IP address of Neo4j server.",
+            default="localhost",
+        )
+        parser.add_argument(
+            f"--{c.NEO4J_PORT}",
+            default=8491,
+            type=int,
+            help="TCP Port of Neo4j Arrow Flight service.",
+        )
+        parser.add_argument(
+            f"--{c.NEO4J_USE_TLS}",
+            default="True",
+            type=strtobool,
+            help="Use TLS for encrypting Neo4j Arrow Flight connection.",
+        )
+        parser.add_argument(
+            f"--{c.NEO4J_USER}",
+            default="neo4j",
+            help="Neo4j Username.",
+        )
+        parser.add_argument(
+            f"--{c.NEO4J_PASSWORD}",
+            help="Neo4j Password",
+        )
+
+        # BigQuery Parameters
+        parser.add_argument(
+            f"--{c.BQ_TABLE}",
+            help="BigQuery table to write the Neo4j data.",
+            type=str,
+        )
+        parser.add_argument(
+            f"--{c.BQ_PROJECT}",
+            type=str,
+            help="GCP project containing BigQuery tables."
+        )
+        parser.add_argument(
+            f"--{c.BQ_DATASET}",
+            type=str,
+            help="BigQuery dataset containing BigQuery tables."
+        )
+
+        # Optional/Other Parameters
+        parser.add_argument(
+            f"--{c.DEBUG}",
+            action="store_true",
+            help="Enable verbose (debug) logging.",
+        )
+
+        ns: argparse.Namespace
+        if bq_args:
+            # We're most likely running as a stored proc, so use that method.
+            ns, _ = parser.parse_known_args(bq_args)
+        else:
+            # Rely entirely on sys.argv and any provided args parameter.
+            ns, _ = parser.parse_known_args(args)
+        return vars(ns)
+
+    def run(self, spark: SparkSession, args: Dict[str, Any]) -> None:
+        sc = spark.sparkContext
+        logger = (
+            sc._jvm.org.apache.log4j.LogManager # type: ignore
+            .getLogger(self.__class__.__name__)
+        )
+        start_time = time.time()
+
+        logger.info(
+            f"starting job for {args[c.BQ_PROJECT]}/{args[c.BQ_DATASET]}/"
+            f"{args[c.BQ_TABLE]}"
+            f"(server concurrency={args[c.NEO4J_CONCURRENCY]})"
+        )
+
+        # 1. Get the graph and database name.
+        graph_name = args[c.NEO4J_GRAPH_NAME]
+        db_name = args[c.NEO4J_DB_NAME]
+
+        # 2. Fetch our secret if any
+        if c.NEO4J_SECRET in args:
+            logger.info(f"fetching secret {args[c.NEO4J_SECRET]}")
+            secret = util.fetch_secret(args[c.NEO4J_SECRET])
+            if not secret:
+                logger.warn("failed to fetch secret, falling back to params")
+            else:
+                args.update(secret)
+
+        # 3. Initialize our clients for source and sink.
+        neo4j = na.Neo4jArrowClient(args[c.NEO4J_HOST],
+                                    graph_name,
+                                    port=args[c.NEO4J_PORT],
+                                    tls=args[c.NEO4J_USE_TLS],
+                                    database=db_name,
+                                    user=args[c.NEO4J_USER],
+                                    password=args[c.NEO4J_PASSWORD],
+                                    concurrency=args[c.NEO4J_CONCURRENCY])
+
+        ### XXX TODO: FINISH ME
+        bq = BigQuerySink(
+            args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_TABLE], None # type: ignore
+        )
+        logger.info(f"using neo4j client {neo4j} (tls={args[c.NEO4J_USE_TLS]})")
 
 
 class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
@@ -261,8 +434,17 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
 
         # 3. Prepare our collection of streams. We do this from the Spark driver
         #    so we can more easily spread the streams across the workers.
-        node_streams = flatten(list(map(bq.table, args[c.NODE_TABLES])))
-        edge_streams = flatten(list(map(bq.table, args[c.EDGE_TABLES])))
+        #
+        # XXX this is a bit convoluted at the moment, but the functional logic
+        #     is to transform the list of table names into BQStreams optionally
+        #     requesting specific field names for the streams. (Default is to
+        #     request all fields in a table.)
+        node_streams = flatten(
+            list(map(to_stream_fn("node", bq, graph), args[c.NODE_TABLES]))
+        )
+        edge_streams = flatten(
+            list(map(to_stream_fn("edge", bq, graph), args[c.EDGE_TABLES]))
+        )
         logger.info(
             f"prepared {len(node_streams):,} node streams, "
             f"{len(edge_streams):,} edge streams"
@@ -284,6 +466,11 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         logger.info(
             f"streamed {cnt:,} nodes, ~{size / (1<<20):,.2f} MiB original size"
         )
+
+        # 5b. Assert we actually got nodes
+        if cnt < 1:
+            logger.error(f"failed to load nodes; aborting.")
+            sys.exit(1)
 
         # 6. Signal we're done with Nodes before moving onto Edges.
         result = neo4j.nodes_done()
