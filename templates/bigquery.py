@@ -92,7 +92,7 @@ def to_stream_fn(mode: str, bq: BigQuerySource,
         if mode == "node":
             node = graph.node_for_src(table_name)
             if node:
-                for key in node.properties().keys():
+                for key in node.properties.keys():
                     fields.append(key)
                 if node.key_field:
                     fields.append(node.key_field)
@@ -101,7 +101,7 @@ def to_stream_fn(mode: str, bq: BigQuerySource,
         elif mode == "edge":
             edge = graph.edge_for_src(table_name)
             if edge:
-                for key in edge.properties().keys():
+                for key in edge.properties.keys():
                     fields.append(key)
                 if edge.source_field:
                     fields.append(edge.source_field)
