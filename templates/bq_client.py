@@ -152,7 +152,7 @@ class BigQuerySink:
         proto_schema = types.ProtoSchema()
         proto_schema.proto_descriptor = descriptor
         self.proto_data = types.AppendRowsRequest.ProtoData()
-        self.proto_data.write_schema = proto_schema
+        self.proto_data.writer_schema = proto_schema
 
 
     def append_rows(self, rows: List[bytes]) -> None:
