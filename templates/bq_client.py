@@ -204,6 +204,11 @@ class BigQuerySink:
             return
         self.client.finalize_write_stream(name=self.stream_name)
 
+        commit_req = types.BatchCommitWriteStreamsRequest()
+        commit_req.parent = self.parent
+        commit_req.write_streams = [self.stream_name] # type: ignore
+        self.client.batch_commit_write_streams(commit_req)
+
     def wait_for_completion(self, timeout_secs: int) -> None:
         for future in self.futures:
             try:
