@@ -14,6 +14,6 @@ __author__ = "Neo4j"
 __version__ = "0.3.0"
 
 from . import constants, util
-from .bq_client import BigQuerySource
+from .bq_client import BigQuerySource, BigQuerySink
 from .bigquery import BigQueryToNeo4jGDSTemplate
 from .vendored import strtobool
