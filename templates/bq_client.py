@@ -175,6 +175,7 @@ class BigQuerySink:
             self.stream_name = write_stream.name
             req_template = types.AppendRowsRequest()
             req_template.write_stream = self.stream_name
+            req_template.proto_rows = self.proto_data
             self.stream = writer.AppendRowsStream(self.client, req_template)
 
         # Process our batch.
