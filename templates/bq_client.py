@@ -155,6 +155,9 @@ class BigQuerySink:
         self.proto_data = types.AppendRowsRequest.ProtoData()
         self.proto_data.writer_schema = proto_schema
 
+    def __str__(self) -> str:
+        return f"BigQuerySink({self.parent})"
+
     @staticmethod
     def print_completion(f: Future) -> None:
         """Print the future to stdout."""

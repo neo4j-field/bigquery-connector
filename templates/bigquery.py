@@ -6,6 +6,7 @@ import sys
 import time
 
 from google.cloud.bigquery_storage import BigQueryReadClient, types
+from google.protobuf import descriptor_pb2
 from dataproc_templates import BaseTemplate
 
 import pyarrow as pa
@@ -16,6 +17,8 @@ import neo4j_arrow as na
 from .bq_client import BigQuerySource, BigQuerySink, BQStream
 from .vendored import strtobool
 from . import constants as c, util
+
+from model import Node, Edge, arrow_to_nodes
 
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -245,12 +248,51 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
                                     user=args[c.NEO4J_USER],
                                     password=args[c.NEO4J_PASSWORD],
                                     concurrency=args[c.NEO4J_CONCURRENCY])
+        logger.info(f"using neo4j client {neo4j} (tls={args[c.NEO4J_USE_TLS]})")
 
         ### XXX TODO: FINISH ME
+        # XXX Assume nodes for now
+        descriptor = descriptor_pb2.DescriptorProto()
+        Node.DESCRIPTOR.CopyToProto(descriptor)
         bq = BigQuerySink(
-            args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_TABLE], None # type: ignore
+            args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_TABLE], descriptor
         )
-        logger.info(f"using neo4j client {neo4j} (tls={args[c.NEO4J_USE_TLS]})")
+        logger.info(f"created sink {bq}")
+
+        # 1. Fetch and process rows from Neo4j
+        # XXX for now, we single-thread this in the Spark driver
+        # XXX hardcode for current demo
+        properties = ["airport_id", "x", "y"]
+        labels = ["Airport"]
+        cnt = 0
+        try:
+            batch = []
+            for row in neo4j.read_nodes(properties, labels):
+                for node in arrow_to_nodes(row, labels[0]):
+                    batch.append(node.SerializeToString())
+                    cnt += 1
+                    if len(batch) > 20_000: # flush
+                        bq.append_rows(batch)
+                        batch = []
+            if batch:
+                # flush stragglers
+                bq.append_rows(batch)
+        except Exception as e:
+            logger.error(f"failure appending data from Neo4j into BigQuery: {e}")
+            raise RuntimeError("oh no!")
+        logger.info(f"sent {cnt:,} nodes to {bq.parent}")
+
+        # 2. Finalize write streams
+        bq.finalize_write_stream()
+        logger.info(f"finalized stream for {bq.parent}")
+
+        # 3. Wait for completion?
+        bq.wait_for_completion(timeout_secs=60 * 5)
+        logger.info(f"completed writes to {bq.parent}")
+
+        # 4. Commit and make data live.
+        bq.commit()
+        logger.info(f"commited rows to {bq.parent}")
 
 
 class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
