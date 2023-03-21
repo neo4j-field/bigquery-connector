@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 __all__ = [
     "BigQueryToNeo4jGDSTemplate",
+    "Neo4jGDSToBigQueryTemplate",
 ]
 
 

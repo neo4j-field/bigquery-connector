@@ -8,7 +8,7 @@ if __name__ == "__main__":
     spark = (
         SparkSession
         .builder
-        .appName("Neo4j BigQuery Connector")
+        .appName("BigQuery -> Neo4j Connector")
         .getOrCreate()
     )
 

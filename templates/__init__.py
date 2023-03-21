@@ -4,6 +4,7 @@ __all__ = [
     "BigQueryToNeo4jGDSTemplate",
     "BigQuerySink",
     "BigQuerySource",
+    "Neo4jGDSToBigQueryTemplate",
     "constants",
     "strtobool",
     "util",
@@ -15,5 +16,5 @@ __version__ = "0.3.0"
 
 from . import constants, util
 from .bq_client import BigQuerySource, BigQuerySink
-from .bigquery import BigQueryToNeo4jGDSTemplate
+from .bigquery import BigQueryToNeo4jGDSTemplate, Neo4jGDSToBigQueryTemplate
 from .vendored import strtobool
