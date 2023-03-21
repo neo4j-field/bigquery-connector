@@ -28,7 +28,8 @@ import neo4j_arrow as na
 from .constants import USER_AGENT
 
 from typing import (
-    cast, Any, Dict, Generator, List, NamedTuple, Optional, Union, Tuple
+    cast, Any, Callable, Dict, Generator, List, NamedTuple, Optional, Union,
+    Tuple
 )
 
 Arrow = Union[pa.Table, pa.RecordBatch]
@@ -154,8 +155,17 @@ class BigQuerySink:
         self.proto_data = types.AppendRowsRequest.ProtoData()
         self.proto_data.writer_schema = proto_schema
 
+    @staticmethod
+    def print_completion(f: Future) -> None:
+        """Print the future to stdout."""
+        print(f"completed {f}")
 
-    def append_rows(self, rows: List[bytes]) -> None:
+    def append_rows(self, rows: List[bytes], *,
+                    callback: Optional[Callable[[Future], None]] = None) -> None:
+        """
+        Submit a series of BigQuery rows (already serialized ProtoBufs),
+        creating a write stream if required.
+        """
         if self.client is None:
             # Latent client creation to support serialization.
             self.client = BigQueryWriteClient(client_info=self.client_info)
@@ -191,25 +201,48 @@ class BigQuerySink:
         request.proto_rows = proto_data
 
         future = self.stream.send(request)
+        if callback:
+            future.add_done_callback(callback)
         self.futures.append(future)
         self.offset += len(rows)
 
-    def finalize_write_stream(self) -> None:
+    def finalize_write_stream(self, stream: str = "") -> None:
         """
         Finalize any pending write stream. If no client or stream, this is a
         no-op and just warns.
         """
-        if self.client is None or self.stream is None:
-            print("no active client/stream")
+        if self.client is None:
+            print("no active client")
             return
-        self.client.finalize_write_stream(name=self.stream_name)
+        if stream:
+            self.client.finalize_write_stream(name=stream)
+        elif self.stream_name:
+            self.client.finalize_write_stream(name=self.stream_name)
+        else:
+            raise RuntimeError("no valid stream name")
 
+    def commit(self, streams: List[str] = []) -> None:
+        """
+        Commit pending write streams. If no streams are provided, uses the
+        existing stream named by self.stream_name.
+        """
+        if self.client is None:
+            print("no active client")
+            return
         commit_req = types.BatchCommitWriteStreamsRequest()
         commit_req.parent = self.parent
-        commit_req.write_streams = [self.stream_name] # type: ignore
+        if streams:
+            commit_req.write_streams = streams
+        elif self.stream_name:
+            commit_req.write_streams = [self.stream_name]
+        else:
+            raise RuntimeError("no valid stream name(s)")
         self.client.batch_commit_write_streams(commit_req)
 
     def wait_for_completion(self, timeout_secs: int) -> None:
+        """
+        Await completion of any outstanding futures.
+        """
         for future in self.futures:
             try:
                 future.result(timeout=timeout_secs) # type: ignore
