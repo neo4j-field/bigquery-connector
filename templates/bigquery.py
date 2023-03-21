@@ -208,7 +208,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
 
         # Simple mode switching for now; nodes or edges
         parser.add_argument(
-            f="--{c.BQ_SINK_MODE}",
+            f"--{c.BQ_SINK_MODE}",
             help="BigQuery Sink mode ('nodes' or 'edges')",
             type=str,
             default="nodes",
