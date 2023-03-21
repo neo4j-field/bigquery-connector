@@ -118,9 +118,11 @@ def to_stream_fn(mode: str, bq: BigQuerySource,
         return bq.table(table_name, fields=fields)
     return _to_stream
 
+
 class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
     """
-    TBA
+    Stream data from a Neo4j GDS graph into a BigQuery table using the Storage
+    Write API.
     """
     @staticmethod
     def parse_args(args: Optional[Sequence[str]] = None) -> Dict[str, Any]:
@@ -219,8 +221,14 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
             ns, _ = parser.parse_known_args(args)
         return vars(ns)
 
+
     def run(self, spark: SparkSession, args: Dict[str, Any]) -> None:
         sc = spark.sparkContext
+        if args[c.DEBUG]:
+            sc.setLogLevel("DEBUG")
+        else:
+            sc.setLogLevel("INFO")
+
         logger = (
             sc._jvm.org.apache.log4j.LogManager # type: ignore
             .getLogger(self.__class__.__name__)
@@ -425,6 +433,11 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
 
     def run(self, spark: SparkSession, args: Dict[str, Any]) -> None:
         sc = spark.sparkContext
+        if args[c.DEBUG]:
+            sc.setLogLevel("DEBUG")
+        else:
+            sc.setLogLevel("INFO")
+
         logger = (
             sc._jvm.org.apache.log4j.LogManager # type: ignore
             .getLogger(self.__class__.__name__)
