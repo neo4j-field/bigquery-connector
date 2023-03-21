@@ -45,9 +45,13 @@ def arrow_to_nodes(arrow: Arrow,
         yield node
 
 
-def arrow_to_edges(arrow: Arrow) -> Generator[Edge, None, None]:
+def arrow_to_edges(arrow: Arrow,
+                   _types: List[str] = []) -> Generator[Edge, None, None]:
     """
     Generate rows of Edges (protobuf format) from an Apache Arrow-based record.
+
+    XXX types is unused currently and exists to match the signature of
+        arrow_to_nodes
     """
     rows, cols = arrow.num_rows, arrow.num_columns
     source_node_ids = arrow.column("sourceNodeId")

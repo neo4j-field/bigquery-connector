@@ -18,10 +18,11 @@ from .bq_client import BigQuerySource, BigQuerySink, BQStream
 from .vendored import strtobool
 from . import constants as c, util
 
-from model import Node, Edge, arrow_to_nodes
+from model import Node, Edge, arrow_to_nodes, arrow_to_edges
 
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
-
+from typing import (
+    Any, Callable, Dict, Generator, List, Optional, Sequence, Tuple, Union
+)
 
 __all__ = [
     "BigQueryToNeo4jGDSTemplate",
@@ -205,6 +206,14 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
             help="BigQuery dataset containing BigQuery tables."
         )
 
+        # Simple mode switching for now; nodes or edges
+        parser.add_argument(
+            f="--{c.BQ_SINK_MODE}",
+            help="BigQuery Sink mode ('nodes' or 'edges')",
+            type=str,
+            default="nodes",
+        )
+
         # Optional/Other Parameters
         parser.add_argument(
             f"--{c.DEBUG}",
@@ -266,9 +275,13 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         logger.info(f"using neo4j client {neo4j} (tls={args[c.NEO4J_USE_TLS]})")
 
         ### XXX TODO: FINISH ME
-        # XXX Assume nodes for now
+        # XXX fallback to Edge for now
         descriptor = descriptor_pb2.DescriptorProto()
-        Node.DESCRIPTOR.CopyToProto(descriptor)
+        if c.BQ_SINK_MODE.lower() == "nodes":
+            Node.DESCRIPTOR.CopyToProto(descriptor)
+        else:
+            Edge.DESCRIPTOR.CopyToProto(descriptor)
+
         bq = BigQuerySink(
             args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_TABLE], descriptor
         )
@@ -276,14 +289,29 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
 
         # 1. Fetch and process rows from Neo4j
         # XXX for now, we single-thread this in the Spark driver
-        # XXX hardcode for current demo
-        properties = ["airport_id", "x", "y"]
-        labels = ["Airport"]
+        # XXX hardcode for current demo and lean on generators
+        converter: Optional[Any] = None # XXX
+        if c.BQ_SINK_MODE.lower() == "nodes":
+            properties = ["airport_id", "x", "y"]
+            topo_filters = ["Airport"]
+            rows = neo4j.read_nodes(properties, labels=topo_filters,
+                                    concurrency=c.NEO4J_CONCURRENCY)
+            converter = arrow_to_nodes
+        elif c.BQ_SINK_MODE.lower() == "edges":
+            properties = ["flightCount"]
+            topo_filters = ["SENDS_TO"]
+            rows = neo4j.read_edges(properties=properties,
+                                    relationship_types=topo_filters,
+                                    concurrency=c.NEO4J_CONCURRENCY)
+            converter = arrow_to_edges
+        else:
+            raise ValueError("invalid sink mode; expected either 'nodes' or 'edges'")
+
         cnt = 0
         try:
             batch = []
-            for row in neo4j.read_nodes(properties, labels=labels):
-                for node in arrow_to_nodes(row, labels):
+            for row in rows:
+                for node in converter(row, topo_filters):
                     batch.append(node.SerializeToString())
                     cnt += 1
                     if len(batch) > 20_000: # flush
@@ -295,7 +323,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         except Exception as e:
             logger.error(f"failure appending data from Neo4j into BigQuery: {e}")
             raise RuntimeError("oh no!")
-        logger.info(f"sent {cnt:,} nodes to {bq.parent}")
+        logger.info(f"sent {cnt:,} {c.BQ_SINK_MODE} to {bq.parent}")
 
         # 2. Finalize write streams
         bq.finalize_write_stream()
