@@ -24,6 +24,9 @@ def arrow_to_nodes(arrow: Arrow,
     _labels: Union[List[str], pa.lib.ListArray]
     if labels:
         # XXX naive approach
+        # ignore '*' wildcard labels
+        if "*" in labels:
+            labels.remove("*") # XXX should we be using a set(), not list()?
         _labels = [labels for _ in range(rows)]
     else:
         _labels = arrow.column("labels")

@@ -72,6 +72,16 @@ def test_arrow_to_nodes_with_labels() -> None:
         for key in ["age", "height", "embedding"]:
             assert props[key] == table.column(key)[i].as_py()
 
+    # we should ignore bogus wildcard values
+    g = arrow_to_nodes(table, labels=["*"])
+    for i in range(dim):
+        node = next(g)
+        assert node.node_id == table.column("nodeId")[i].as_py()
+        assert list(node.labels) == []
+        props = json.loads(node.properties or "false")
+        for key in ["age", "height", "embedding"]:
+            assert props[key] == table.column(key)[i].as_py()
+
 
 def test_arrow_to_edges() -> None:
     """
