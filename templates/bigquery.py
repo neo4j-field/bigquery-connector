@@ -206,6 +206,25 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
             help="BigQuery dataset containing BigQuery tables."
         )
 
+        parser.add_argument(
+            f"--{c.NEO4J_LABELS}",
+            help="Comma-separated list of labels to read from Neo4j.",
+            type=lambda x: [y.strip() for y in str(x).split(",")],
+            default=["*"],
+        )
+        parser.add_argument(
+            f"--{c.NEO4J_TYPES}",
+            help="Comma-separated list of relationship types to read from Neo4j.",
+            type=lambda x: [y.strip() for y in str(x).split(",")],
+            default=["*"],
+        )
+        parser.add_argument(
+            f"--{c.NEO4J_PROPERTIES}",
+            help="Comma-separated list of properties to read from Neo4j.",
+            type=lambda x: [y.strip() for y in str(x).split(",")],
+            default=[],
+        )
+
         # Simple mode switching for now; nodes or edges
         parser.add_argument(
             f"--{c.BQ_SINK_MODE}",
@@ -289,17 +308,15 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
 
         # 1. Fetch and process rows from Neo4j
         # XXX for now, we single-thread this in the Spark driver
-        # XXX hardcode for current demo and lean on generators
+        properties = args[c.NEO4J_PROPERTIES]
         converter: Optional[Any] = None # XXX
         if args[c.BQ_SINK_MODE].lower() == "nodes":
-            properties = ["airport_id", "x", "y"]
-            topo_filters = ["Airport"]
+            topo_filters = args[c.NEO4J_LABELS]
             rows = neo4j.read_nodes(properties, labels=topo_filters,
                                     concurrency=args[c.NEO4J_CONCURRENCY])
             converter = arrow_to_nodes
         elif args[c.BQ_SINK_MODE].lower() == "edges":
-            properties = ["flightCount"]
-            topo_filters = ["SENDS_TO"]
+            topo_filters = args[c.NEO4J_TYPES]
             rows = neo4j.read_edges(properties=properties,
                                     relationship_types=topo_filters,
                                     concurrency=args[c.NEO4J_CONCURRENCY])
@@ -314,7 +331,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
                 for node in converter(row, topo_filters):
                     batch.append(node.SerializeToString())
                     cnt += 1
-                    if len(batch) > 20_000: # flush
+                    if len(batch) > 20_000: # flush # XXX arbitrary batch size
                         bq.append_rows(batch)
                         batch = []
             if batch:
