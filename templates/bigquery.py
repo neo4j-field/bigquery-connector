@@ -179,6 +179,12 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
             f"--{c.NEO4J_PASSWORD}",
             help="Neo4j Password",
         )
+        parser.add_argument(
+            f"--{c.NEO4J_CONCURRENCY}",
+            default=4,
+            type=int,
+            help="Neo4j server-side concurrency.",
+        )
 
         # BigQuery Parameters
         parser.add_argument(
