@@ -9,11 +9,11 @@ Arrow = Union[pa.Table, pa.RecordBatch]
 
 
 def arrow_to_nodes(arrow: Arrow,
-                   label: Optional[str] = None) -> Generator[Node, None, None]:
+                   labels: List[str] = []) -> Generator[Node, None, None]:
     """
     Generate rows of Nodes (protobuf format) from an Apache Arrow-based record.
 
-    An optional "label" can be provided to hardcode a single node label in the
+    An optional "labels" list can be provided to hardcode a node labels in the
     resulting output.
     """
     # TODO assert schema
@@ -21,12 +21,12 @@ def arrow_to_nodes(arrow: Arrow,
     rows, cols = arrow.num_rows, arrow.num_columns
     node_ids = arrow.column("nodeId")
 
-    labels: Union[List[str], pa.lib.ListArray]
-    if label:
+    _labels: Union[List[str], pa.lib.ListArray]
+    if labels:
         # XXX naive approach
-        labels = [label for _ in range(rows)]
+        _labels = [labels for _ in range(rows)]
     else:
-        labels = arrow.column("labels")
+        _labels = arrow.column("labels")
 
     # XXX naieve approach using field names for now
     # N.b. We need to rely on the schema if using RecordBatches.
@@ -35,7 +35,7 @@ def arrow_to_nodes(arrow: Arrow,
     for row in range(rows):
         node = Node()
         node.node_id = node_ids[row].as_py()
-        for l in list(labels[row]):
+        for l in list(_labels[row]):
             node.labels.append(str(l))
         items = [(key, arrow.column(key)[row].as_py()) for key in props]
         if items:

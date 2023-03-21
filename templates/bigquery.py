@@ -283,7 +283,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         try:
             batch = []
             for row in neo4j.read_nodes(properties, labels=labels):
-                for node in arrow_to_nodes(row, labels[0]):
+                for node in arrow_to_nodes(row, labels):
                     batch.append(node.SerializeToString())
                     cnt += 1
                     if len(batch) > 20_000: # flush
