@@ -274,7 +274,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         cnt = 0
         try:
             batch = []
-            for row in neo4j.read_nodes(properties, labels):
+            for row in neo4j.read_nodes(properties, labels=labels):
                 for node in arrow_to_nodes(row, labels[0]):
                     batch.append(node.SerializeToString())
                     cnt += 1
