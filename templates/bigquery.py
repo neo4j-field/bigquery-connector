@@ -312,11 +312,13 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         converter: Optional[Any] = None # XXX
         if args[c.BQ_SINK_MODE].lower() == "nodes":
             topo_filters = args[c.NEO4J_LABELS]
+            logger.info(f"reading nodes (labels={topo_filters}, properties={properties})")
             rows = neo4j.read_nodes(properties, labels=topo_filters,
                                     concurrency=args[c.NEO4J_CONCURRENCY])
             converter = arrow_to_nodes
         elif args[c.BQ_SINK_MODE].lower() == "edges":
             topo_filters = args[c.NEO4J_TYPES]
+            logger.info(f"reading edges (types={topo_filters}, properties={properties})")
             rows = neo4j.read_edges(properties=properties,
                                     relationship_types=topo_filters,
                                     concurrency=args[c.NEO4J_CONCURRENCY])
@@ -338,6 +340,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
                 # flush stragglers
                 bq.append_rows(batch)
         except Exception as e:
+            # TODO: catch bad BQ schema? it ends up here if that's the issue
             logger.error(f"failure appending data from Neo4j into BigQuery: {e}")
             raise RuntimeError("oh no!")
         logger.info(f"sent {cnt:,} {args[c.BQ_SINK_MODE]} to {bq.parent}")
