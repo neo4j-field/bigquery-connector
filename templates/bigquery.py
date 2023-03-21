@@ -277,7 +277,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         ### XXX TODO: FINISH ME
         # XXX fallback to Edge for now
         descriptor = descriptor_pb2.DescriptorProto()
-        if c.BQ_SINK_MODE.lower() == "nodes":
+        if args[c.BQ_SINK_MODE].lower() == "nodes":
             Node.DESCRIPTOR.CopyToProto(descriptor)
         else:
             Edge.DESCRIPTOR.CopyToProto(descriptor)
@@ -291,18 +291,18 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         # XXX for now, we single-thread this in the Spark driver
         # XXX hardcode for current demo and lean on generators
         converter: Optional[Any] = None # XXX
-        if c.BQ_SINK_MODE.lower() == "nodes":
+        if args[c.BQ_SINK_MODE].lower() == "nodes":
             properties = ["airport_id", "x", "y"]
             topo_filters = ["Airport"]
             rows = neo4j.read_nodes(properties, labels=topo_filters,
-                                    concurrency=c.NEO4J_CONCURRENCY)
+                                    concurrency=args[c.NEO4J_CONCURRENCY])
             converter = arrow_to_nodes
-        elif c.BQ_SINK_MODE.lower() == "edges":
+        elif args[c.BQ_SINK_MODE].lower() == "edges":
             properties = ["flightCount"]
             topo_filters = ["SENDS_TO"]
             rows = neo4j.read_edges(properties=properties,
                                     relationship_types=topo_filters,
-                                    concurrency=c.NEO4J_CONCURRENCY)
+                                    concurrency=args[c.NEO4J_CONCURRENCY])
             converter = arrow_to_edges
         else:
             raise ValueError("invalid sink mode; expected either 'nodes' or 'edges'")
@@ -323,7 +323,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         except Exception as e:
             logger.error(f"failure appending data from Neo4j into BigQuery: {e}")
             raise RuntimeError("oh no!")
-        logger.info(f"sent {cnt:,} {c.BQ_SINK_MODE} to {bq.parent}")
+        logger.info(f"sent {cnt:,} {args[c.BQ_SINK_MODE]} to {bq.parent}")
 
         # 2. Finalize write streams
         bq.finalize_write_stream()
