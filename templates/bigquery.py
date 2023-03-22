@@ -311,7 +311,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         ns: argparse.Namespace
         if bq_args:
             # We're most likely running as a stored proc, so use that method.
-            ns, _ = parser.parse_known_args(bq_args)
+            ns, _ = parser.parse_known_args(bq_args + list(args or []))
         else:
             # Rely entirely on sys.argv and any provided args parameter.
             ns, _ = parser.parse_known_args(args)
