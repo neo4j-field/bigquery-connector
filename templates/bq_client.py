@@ -148,6 +148,7 @@ class BigQuerySink:
         self.offset: int = 0
         self.stream: Optional[Any] = None
         self.stream_name: Optional[str] = None
+        self.callback: Optional[Any] = None # TODO: callback fn
 
         # XXX maybe move this?
         proto_schema = types.ProtoSchema()
@@ -163,11 +164,12 @@ class BigQuerySink:
         """Print the future to stdout."""
         print(f"completed {f}")
 
-    def append_rows(self, rows: List[bytes], *,
-                    callback: Optional[Callable[[Future], None]] = None) -> None:
+    def append_rows(self, rows: List[bytes]) -> str:
         """
         Submit a series of BigQuery rows (already serialized ProtoBufs),
         creating a write stream if required.
+
+        Returns the stream name appended to.
         """
         if self.client is None:
             # Latent client creation to support serialization.
@@ -204,25 +206,30 @@ class BigQuerySink:
         request.proto_rows = proto_data
 
         future = self.stream.send(request)
-        if callback:
-            future.add_done_callback(callback)
+        if self.callback:
+            future.add_done_callback(self.callback)
         self.futures.append(future)
         self.offset += len(rows)
+        return cast(str, self.stream_name) # Should be non-None at this point.
 
-    def finalize_write_stream(self, stream: str = "") -> None:
+    def finalize_write_stream(self, stream: str = "") -> Tuple[str, int]:
         """
         Finalize any pending write stream. If no client or stream, this is a
         no-op and just warns.
+
+        Returns the stream name finalized and the final offset.
         """
         if self.client is None:
             print("no active client")
-            return
+            return ("", 0)
         if stream:
             self.client.finalize_write_stream(name=stream)
         elif self.stream_name:
+            self.wait_for_completion(5 * 60) # XXX 5 mins... yolo!
             self.client.finalize_write_stream(name=self.stream_name)
         else:
             raise RuntimeError("no valid stream name")
+        return self.stream_name, self.offset # type: ignore # should be non-None at this point
 
     def commit(self, streams: List[str] = []) -> None:
         """

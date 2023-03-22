@@ -30,6 +30,10 @@ __all__ = [
 ]
 
 
+Arrow = Union[pa.Table, pa.RecordBatch]
+ArrowStream = Generator[Arrow, None, None]
+
+
 def load_model_from_gcs(uri: str) -> Optional[na.model.Graph]:
     """
     Attempt to load a Graph model from a GCS uri. Returns None on failure.
@@ -118,6 +122,46 @@ def to_stream_fn(mode: str, bq: BigQuerySource,
             raise ValueError("invalid mode. expected 'node' or 'edge'.")
         return bq.table(table_name, fields=fields)
     return _to_stream
+
+
+def batch_converter(converter: Callable[[Arrow, List[str]],
+                                        Generator[Union[Node, Edge], None, None]],
+                    topo_filters: List[str]) -> Callable[[Arrow], List[bytes]]:
+    """
+    Takes column-oriented batches of Arrow buffers and turn thems into lists of
+    graph elements (Node or Edge protobufs).
+    """
+    def _batch_converter(arrow: Arrow) -> List[bytes]:
+        batch: List[bytes] = []
+        for graph_element in converter(arrow, topo_filters):
+            batch.append(graph_element.SerializeToString())
+        return batch
+    return _batch_converter
+
+
+def read_nodes(client: na.Neo4jArrowClient) -> \
+        Callable[[Tuple[Dict[str, str], List[str]]], ArrowStream]:
+    """
+    Stream nodes and node properties from Neo4j.
+    """
+    def _read_nodes(config: Tuple[Dict[str, str], List[str]]) -> ArrowStream:
+        properties, topo_filters = config
+        for batch in client.read_nodes(properties, labels=topo_filters):
+            yield batch
+    return _read_nodes
+
+
+def read_edges(client: na.Neo4jArrowClient) -> \
+        Callable[[Tuple[Dict[str, str], List[str]]], ArrowStream]:
+    """
+    Stream edges and edge properties from Neo4j.
+    """
+    def _read_edges(config: Tuple[Dict[str, str], List[str]]) -> ArrowStream:
+        properties, topo_filters = config
+        for batch in client.read_edges(properties=properties,
+                                       relationship_types=topo_filters):
+            yield batch
+    return _read_edges
 
 
 class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
@@ -312,50 +356,37 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         converter: Optional[Any] = None # XXX
         if args[c.BQ_SINK_MODE].lower() == "nodes":
             topo_filters = args[c.NEO4J_LABELS]
-            logger.info(f"reading nodes (labels={topo_filters}, properties={properties})")
-            rows = neo4j.read_nodes(properties, labels=topo_filters,
-                                    concurrency=args[c.NEO4J_CONCURRENCY])
             converter = arrow_to_nodes
+            reading_fn = read_nodes(neo4j)
+            logger.info(f"reading nodes (labels={topo_filters}, properties={properties})")
         elif args[c.BQ_SINK_MODE].lower() == "edges":
             topo_filters = args[c.NEO4J_TYPES]
-            logger.info(f"reading edges (types={topo_filters}, properties={properties})")
-            rows = neo4j.read_edges(properties=properties,
-                                    relationship_types=topo_filters,
-                                    concurrency=args[c.NEO4J_CONCURRENCY])
             converter = arrow_to_edges
+            reading_fn = read_edges(neo4j)
+            logger.info(f"reading edges (types={topo_filters}, properties={properties})")
         else:
             raise ValueError("invalid sink mode; expected either 'nodes' or 'edges'")
 
-        cnt = 0
-        try:
-            batch = []
-            for row in rows:
-                for node in converter(row, topo_filters):
-                    batch.append(node.SerializeToString())
-                    cnt += 1
-                    if len(batch) > 20_000: # flush # XXX arbitrary batch size
-                        bq.append_rows(batch)
-                        batch = []
-            if batch:
-                # flush stragglers
-                bq.append_rows(batch)
-        except Exception as e:
-            # TODO: catch bad BQ schema? it ends up here if that's the issue
-            logger.error(f"failure appending data from Neo4j into BigQuery: {e}")
-            raise RuntimeError("oh no!")
-        logger.info(f"sent {cnt:,} {args[c.BQ_SINK_MODE]} to {bq.parent}")
 
-        # 2. Finalize write streams
-        bq.finalize_write_stream()
-        logger.info(f"finalized stream for {bq.parent}")
+        start_time = time.time()
+        results: List[Tuple[str, int]] = (
+            sc
+            .parallelize([(properties, topo_filters)]) # Seed with our config elements
+            .map(reading_fn) # Stream the data from Neo4j
+            .map(batch_converter(converter, topo_filters)) # Convert to lists of ProtoBufs
+            .map(bq.append_rows) # Ship 'em!
+            .map(bq.finalize_write_stream)
+            .collect()
+        )
 
-        # 3. Wait for completion?
-        bq.wait_for_completion(timeout_secs=60 * 5)
-        logger.info(f"completed writes to {bq.parent}")
+        # Crude, but let's do this for now.
+        streams: List[str] = [r[0] for r in results]
+        cnt: int = sum([r[1] for r in results])
+        logger.info(f"set {cnt:,} rows to BigQuery")
 
         # 4. Commit and make data live.
-        bq.commit()
-        logger.info(f"commited rows to {bq.parent}")
+        bq.commit(streams)
+        logger.info(f"commited {cnt:,} rows to {bq.parent}")
 
 
 class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
