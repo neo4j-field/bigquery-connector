@@ -140,27 +140,39 @@ def batch_converter(converter: Callable[[Arrow, List[str]],
 
 
 def read_nodes(client: na.Neo4jArrowClient) -> \
-        Callable[[Tuple[Dict[str, str], List[str]]], ArrowStream]:
+        Callable[[Tuple[Dict[str, str], List[str]]], List[Arrow]]:
     """
     Stream nodes and node properties from Neo4j.
     """
-    def _read_nodes(config: Tuple[Dict[str, str], List[str]]) -> ArrowStream:
+    def _read_nodes(config: Tuple[Dict[str, str], List[str]]) -> List[Arrow]:
         properties, topo_filters = config
+        rows: List[Arrow] = []
+        cnt, sz = 0, 0
         for batch in client.read_nodes(properties, labels=topo_filters):
-            yield batch
+            rows.append(batch)
+            cnt += batch.num_rows
+            sz += batch.nbytes
+        print(f"read {cnt:,} nodes, {sz:,} bytes")
+        return rows
     return _read_nodes
 
 
 def read_edges(client: na.Neo4jArrowClient) -> \
-        Callable[[Tuple[Dict[str, str], List[str]]], ArrowStream]:
+        Callable[[Tuple[Dict[str, str], List[str]]], List[Arrow]]:
     """
     Stream edges and edge properties from Neo4j.
     """
-    def _read_edges(config: Tuple[Dict[str, str], List[str]]) -> ArrowStream:
+    def _read_edges(config: Tuple[Dict[str, str], List[str]]) -> List[Arrow]:
         properties, topo_filters = config
+        rows: List[Arrow] = []
+        cnt, sz = 0, 0
         for batch in client.read_edges(properties=properties,
                                        relationship_types=topo_filters):
-            yield batch
+            rows.append(batch)
+            cnt += batch.num_rows
+            sz += batch.nbytes
+        print(f"read {cnt:,} edges, {sz:,} bytes")
+        return rows
     return _read_edges
 
 
@@ -372,7 +384,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         results: List[Tuple[str, int]] = (
             sc
             .parallelize([(properties, topo_filters)]) # Seed with our config elements
-            .map(reading_fn) # Stream the data from Neo4j
+            .map(reading_fn) # Stream the data from Neo4j. XXX sadly this is eager :(
             .map(batch_converter(converter, topo_filters)) # Convert to lists of ProtoBufs
             .map(bq.append_rows) # Ship 'em!
             .map(bq.finalize_write_stream)
