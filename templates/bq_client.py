@@ -164,12 +164,12 @@ class BigQuerySink:
         """Print the future to stdout."""
         print(f"completed {f}")
 
-    def append_rows(self, rows: List[bytes]) -> str:
+    def append_rows(self, rows: List[bytes]) -> Tuple[str, int]:
         """
         Submit a series of BigQuery rows (already serialized ProtoBufs),
         creating a write stream if required.
 
-        Returns the stream name appended to.
+        Returns the stream name appended to and the number of rows appended.
         """
         if self.client is None:
             # Latent client creation to support serialization.
@@ -182,7 +182,7 @@ class BigQuerySink:
             #
             write_stream_type = types.WriteStream()
             write_stream_type.type_ = cast(
-                types.WriteStream.Type, types.WriteStream.Type.PENDING
+                types.WriteStream.Type, types.WriteStream.Type.COMMITTED # XXX
             )
             write_stream = self.client.create_write_stream(
                 parent=self.parent, write_stream=write_stream_type,
@@ -192,10 +192,12 @@ class BigQuerySink:
             req_template.write_stream = self.stream_name
             req_template.proto_rows = self.proto_data
             self.stream = writer.AppendRowsStream(self.client, req_template)
+            print(f"created write stream {self.stream_name}")
 
         # Process our batch.
         # XXX For now, we ignore any API limits and hope for the best.
         proto_rows = types.ProtoRows()
+        print(f"appending {len(rows):,} rows to {self.stream_name}")
         for row in rows:
             proto_rows.serialized_rows.append(row)
 
@@ -210,7 +212,7 @@ class BigQuerySink:
             future.add_done_callback(self.callback)
         self.futures.append(future)
         self.offset += len(rows)
-        return cast(str, self.stream_name) # Should be non-None at this point.
+        return cast(str, self.stream_name), len(rows) # XXX ignoring offset for now
 
     def finalize_write_stream(self, stream: str = "") -> Tuple[str, int]:
         """

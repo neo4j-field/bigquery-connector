@@ -387,7 +387,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
             .flatMap(reading_fn) # Stream the data from Neo4j. XXX sadly this is eager :(
             .map(batch_converter(converter, topo_filters)) # Convert to lists of ProtoBufs
             .map(bq.append_rows) # Ship 'em!
-            .map(bq.finalize_write_stream)
+            # .map(bq.finalize_write_stream)
             .collect()
         )
 
@@ -397,8 +397,8 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         logger.info(f"sent {cnt:,} rows to BigQuery using {len(streams):,} stream(s)")
 
         # 4. Commit and make data live.
-        bq.commit(streams)
-        logger.info(f"commited {cnt:,} rows to {bq.parent}")
+        #bq.commit(streams)
+        #logger.info(f"commited {cnt:,} rows to {bq.parent}")
 
 
 class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
