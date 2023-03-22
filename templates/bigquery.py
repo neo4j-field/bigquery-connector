@@ -329,7 +329,6 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
             sc._jvm.org.apache.log4j.LogManager # type: ignore
             .getLogger(self.__class__.__name__)
         )
-        start_time = time.time()
 
         logger.info(
             f"starting job for {args[c.BQ_PROJECT]}/{args[c.BQ_DATASET]}/"
@@ -361,7 +360,6 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
                                     concurrency=args[c.NEO4J_CONCURRENCY])
         logger.info(f"using neo4j client {neo4j} (tls={args[c.NEO4J_USE_TLS]})")
 
-        ### XXX TODO: FINISH ME
         # XXX fallback to Edge for now
         descriptor = descriptor_pb2.DescriptorProto()
         if args[c.BQ_SINK_MODE].lower() == "nodes":
@@ -403,11 +401,13 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
             # .map(bq.finalize_write_stream)
             .collect()
         )
+        duration = time.time() - start_time
 
         # Crude, but let's do this for now.
         streams: List[str] = [r[0] for r in results]
         cnt: int = sum([r[1] for r in results])
-        logger.info(f"sent {cnt:,} rows to BigQuery using {len(streams):,} stream(s)")
+        logger.info(f"sent {cnt:,} rows to BigQuery using {len(streams):,} "
+                    f"stream(s) in {duration:,.3f}s ({cnt/duration:,.2f} rows/s)")
 
         # 4. Commit and make data live.
         #bq.commit(streams)
