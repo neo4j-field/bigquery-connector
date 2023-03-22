@@ -394,7 +394,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         # Crude, but let's do this for now.
         streams: List[str] = [r[0] for r in results]
         cnt: int = sum([r[1] for r in results])
-        logger.info(f"sent {cnt:,} rows to BigQuery")
+        logger.info(f"sent {cnt:,} rows to BigQuery using {len(streams):,} stream(s)")
 
         # 4. Commit and make data live.
         bq.commit(streams)
