@@ -384,7 +384,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         results: List[Tuple[str, int]] = (
             sc
             .parallelize([(properties, topo_filters)]) # Seed with our config elements
-            .map(reading_fn) # Stream the data from Neo4j. XXX sadly this is eager :(
+            .flatMap(reading_fn) # Stream the data from Neo4j. XXX sadly this is eager :(
             .map(batch_converter(converter, topo_filters)) # Convert to lists of ProtoBufs
             .map(bq.append_rows) # Ship 'em!
             .map(bq.finalize_write_stream)
