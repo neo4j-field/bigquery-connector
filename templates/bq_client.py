@@ -7,10 +7,10 @@ import logging
 
 ### XXX this is hell...truly I am in hell.
 import sys
-print(f"original path: {sys.path}")
+logging.info(f"original path: {sys.path}")
 newpath = [p for p in sys.path if not "spark-bigquery-support" in p]
 sys.path = newpath
-print(f"new path: {sys.path}")
+logging.info(f"new path: {sys.path}")
 #######
 
 from google.cloud.bigquery_storage import (
@@ -162,7 +162,7 @@ class BigQuerySink:
     @staticmethod
     def print_completion(f: Future) -> None:
         """Print the future to stdout."""
-        print(f"completed {f}")
+        logging.info(f"completed {f}")
 
     def append_rows(self, rows: List[bytes]) -> Tuple[str, int]:
         """
@@ -192,12 +192,12 @@ class BigQuerySink:
             req_template.write_stream = self.stream_name
             req_template.proto_rows = self.proto_data
             self.stream = writer.AppendRowsStream(self.client, req_template)
-            print(f"created write stream {self.stream_name}")
+            logging.info(f"created write stream {self.stream_name}")
 
         # Process our batch.
         # XXX For now, we ignore any API limits and hope for the best.
         proto_rows = types.ProtoRows()
-        print(f"appending {len(rows):,} rows to {self.stream_name}")
+        logging.info(f"appending {len(rows):,} rows to {self.stream_name}")
         for row in rows:
             proto_rows.serialized_rows.append(row)
 

@@ -1,6 +1,7 @@
 # Copyright (c) "Neo4j"
 # Neo4j Sweden AB [https://neo4j.com]
 import argparse
+import logging
 import itertools
 import sys
 import time
@@ -147,12 +148,18 @@ def read_nodes(client: na.Neo4jArrowClient) -> \
     def _read_nodes(config: Tuple[Dict[str, str], List[str]]) -> List[Arrow]:
         properties, topo_filters = config
         rows: List[Arrow] = []
-        cnt, sz = 0, 0
+        cnt, log_cnt, sz = 0, 0, 0
+        logging.info(f"streaming nodes from {client}")
         for batch in client.read_nodes(properties, labels=topo_filters):
             rows.append(batch)
             cnt += batch.num_rows
             sz += batch.nbytes
-        print(f"read {cnt:,} nodes, {sz:,} bytes")
+            # for now we need some logging since this is an eager job
+            log_cnt += batch.num_rows
+            if log_cnt > 100_000:
+                logging.info(f"...read {log_cnt:,} nodes")
+                log_cnt = 0
+        logging.info(f"read {cnt:,} nodes, {sz:,} bytes")
         return rows
     return _read_nodes
 
@@ -165,13 +172,18 @@ def read_edges(client: na.Neo4jArrowClient) -> \
     def _read_edges(config: Tuple[Dict[str, str], List[str]]) -> List[Arrow]:
         properties, topo_filters = config
         rows: List[Arrow] = []
-        cnt, sz = 0, 0
+        cnt, log_cnt, sz = 0, 0, 0
         for batch in client.read_edges(properties=properties,
                                        relationship_types=topo_filters):
             rows.append(batch)
             cnt += batch.num_rows
             sz += batch.nbytes
-        print(f"read {cnt:,} edges, {sz:,} bytes")
+            # for now we need some logging since this is an eager job
+            log_cnt += batch.num_rows
+            if log_cnt > 100_000:
+                logging.info(f"...read {log_cnt:,} edges")
+                log_cnt = 0
+        logging.info(f"read {cnt:,} edges, {sz:,} bytes")
         return rows
     return _read_edges
 
@@ -186,7 +198,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         # Try pulling out any BigQuery procedure environmental args.
         bq_args = util.bq_params()
         if bq_args:
-            print(f"using BigQuery args: {bq_args}")
+            logging.info(f"using BigQuery args: {bq_args}")
 
         parser = argparse.ArgumentParser()
         parser.add_argument(
@@ -414,7 +426,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
         # Try pulling out any BigQuery procedure environmental args.
         bq_args = util.bq_params()
         if bq_args:
-            print(f"using BigQuery args: {bq_args}")
+            logging.info(f"using BigQuery args: {bq_args}")
 
         parser = argparse.ArgumentParser()
         parser.add_argument(
