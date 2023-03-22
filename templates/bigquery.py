@@ -375,6 +375,10 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         # 1. Fetch and process rows from Neo4j
         # XXX for now, we single-thread this in the Spark driver
         properties = args[c.NEO4J_PROPERTIES]
+        if properties is None or properties == [""] or properties == ["null"]:
+            # This most likely happens from BigQuery, so help convert to valid input.
+            properties = []
+
         converter: Optional[Any] = None # XXX
         if args[c.BQ_SINK_MODE].lower() == "nodes":
             topo_filters = args[c.NEO4J_LABELS]
