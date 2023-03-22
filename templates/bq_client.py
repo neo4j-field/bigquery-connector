@@ -220,8 +220,8 @@ class BigQuerySink:
         Returns the stream name finalized and the final offset.
         """
         if self.client is None:
-            print("no active client")
-            return ("", 0)
+            self.client = BigQueryWriteClient(client_info=self.client_info)
+
         if stream:
             self.client.finalize_write_stream(name=stream)
         elif self.stream_name:
@@ -237,8 +237,8 @@ class BigQuerySink:
         existing stream named by self.stream_name.
         """
         if self.client is None:
-            print("no active client")
-            return
+            self.client = BigQueryWriteClient(client_info=self.client_info)
+
         commit_req = types.BatchCommitWriteStreamsRequest()
         commit_req.parent = self.parent
         if streams:
