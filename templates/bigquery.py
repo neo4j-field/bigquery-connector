@@ -414,17 +414,18 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
                 "invalid sink mode; expected either 'nodes' or 'edges'"
             )
 
-
-        logger.info(
-            f"using spark workers with parallelism {sc.defaultParallelism}"
-        )
+        # Depending on the Spark environment, we may or may not be able to
+        # identify the number of executor cores. For now, let's fallback to
+        # the neo4j_concurrency setting.
+        num_partitions = max(sc.defaultParallelism, args[c.NEO4J_CONCURRENCY])
+        logger.info(f"using {num_partitions:,} partitions")
         start_time = time.time()
         results: List[Tuple[str, int]] = (
             sc
-            .parallelize([(properties, topo_filters)]) # Seed with our config elements
-            .flatMap(reading_fn) # Stream the data from Neo4j. XXX sadly this is eager :(
-            .repartition(sc.defaultParallelism) # XXX yolo!
-            .map(batch_converter(converter, topo_filters)) # Convert to List[ProtoBufs]
+            .parallelize([(properties, topo_filters)]) # Seed with our config
+            .flatMap(reading_fn) # Stream the data from Neo4j. XXX this is eager!
+            .repartition(num_partitions) # Repartition to get concurrency.
+            .map(batch_converter(converter, topo_filters)) # -> List[ProtoBufs]
             .mapPartitions(append_batch(bq)) # Ship 'em to BigQuery!
             .collect()
         )
