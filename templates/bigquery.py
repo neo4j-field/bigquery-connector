@@ -197,7 +197,7 @@ def append_batch(sink: BigQuerySink) \
         cnt = 0
         for b in batch:
             sink.append_rows(b)
-            cnt += 1
+            cnt += len(b)
         logging.info(f"appended {cnt:,} rows")
         sink.finalize_write_stream()
         yield cast(str, sink.stream_name), cnt
