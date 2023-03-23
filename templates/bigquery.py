@@ -22,7 +22,8 @@ from . import constants as c, util
 from model import Node, Edge, arrow_to_nodes, arrow_to_edges
 
 from typing import (
-    Any, Callable, Dict, Generator, List, Optional, Sequence, Tuple, Union
+    cast, Any, Callable, Dict, Generator, Iterable, List, Optional, Sequence,
+    Tuple, Union
 )
 
 __all__ = [
@@ -187,6 +188,20 @@ def read_edges(client: na.Neo4jArrowClient) -> \
         return rows
     return _read_edges
 
+
+def append_batch(sink: BigQuerySink) \
+        -> Callable[[Iterable[Union[Node, Edge]]],
+                    Iterable[Tuple[str, int]]]:
+    def _append_batch(batch: Iterable[Union[Node, Edge]]) \
+            -> Iterable[Tuple[str, int]]:
+        cnt = 0
+        for b in batch:
+            sink.append_rows(b)
+            cnt += 1
+        logging.info(f"appended {cnt:,} rows")
+        sink.finalize_write_stream()
+        yield cast(str, sink.stream_name), cnt
+    return _append_batch
 
 class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
     """
@@ -399,10 +414,9 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
             sc
             .parallelize([(properties, topo_filters)]) # Seed with our config elements
             .flatMap(reading_fn) # Stream the data from Neo4j. XXX sadly this is eager :(
-            .repartition(64) # XXX yolo
-            .map(batch_converter(converter, topo_filters)) # Convert to lists of ProtoBufs
-            .map(bq.append_rows) # Ship 'em!
-            # .map(bq.finalize_write_stream)
+            .repartition(sc.defaultParallelism) # XXX yolo!
+            .map(batch_converter(converter, topo_filters)) # Convert to List[ProtoBufs]
+            .mapPartitions(append_batch(bq)) # Ship 'em to BigQuery!
             .collect()
         )
         duration = time.time() - start_time
