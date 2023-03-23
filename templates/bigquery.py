@@ -399,16 +399,25 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
             topo_filters = args[c.NEO4J_LABELS]
             converter = arrow_to_nodes
             reading_fn = read_nodes(neo4j)
-            logger.info(f"reading nodes (labels={topo_filters}, properties={properties})")
+            logger.info(
+                f"reading nodes (labels={topo_filters}, properties={properties})"
+            )
         elif args[c.BQ_SINK_MODE].lower() == "edges":
             topo_filters = args[c.NEO4J_TYPES]
             converter = arrow_to_edges
             reading_fn = read_edges(neo4j)
-            logger.info(f"reading edges (types={topo_filters}, properties={properties})")
+            logger.info(
+                f"reading edges (types={topo_filters}, properties={properties})"
+            )
         else:
-            raise ValueError("invalid sink mode; expected either 'nodes' or 'edges'")
+            raise ValueError(
+                "invalid sink mode; expected either 'nodes' or 'edges'"
+            )
 
 
+        logger.info(
+            f"using spark workers with parallelism {sc.defaultParallelism}"
+        )
         start_time = time.time()
         results: List[Tuple[str, int]] = (
             sc
