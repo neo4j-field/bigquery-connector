@@ -150,14 +150,23 @@ class BigQuerySink:
         self.stream_name: Optional[str] = None
         self.callback: Optional[Any] = None # TODO: callback fn
 
-        # XXX maybe move this?
-        proto_schema = types.ProtoSchema()
-        proto_schema.proto_descriptor = descriptor
-        self.proto_data = types.AppendRowsRequest.ProtoData()
-        self.proto_data.writer_schema = proto_schema
+        self.serialized_proto_data: bytes = descriptor.SerializeToString()
+        self.proto_data: Optional[Any] = None # TODO: typing
 
     def __str__(self) -> str:
         return f"BigQuerySink({self.parent})"
+
+    def _latent_init(self) -> None:
+        """
+        Latent initialization to support pickling.
+        """
+         # XXX maybe move this?
+        proto_schema = types.ProtoSchema()
+        descriptor = descriptor_pb2.DescriptorProto()
+        descriptor.ParseFromString(self.serialized_proto_data)
+        proto_schema.proto_descriptor = descriptor
+        self.proto_data = types.AppendRowsRequest.ProtoData()
+        self.proto_data.writer_schema = proto_schema
 
     @staticmethod
     def print_completion(f: Future) -> None:
@@ -174,6 +183,7 @@ class BigQuerySink:
         if self.client is None:
             # Latent client creation to support serialization.
             self.client = BigQueryWriteClient(client_info=self.client_info)
+            self._latent_init()
 
         if self.stream is None:
             #
@@ -190,6 +200,8 @@ class BigQuerySink:
             self.stream_name = write_stream.name
             req_template = types.AppendRowsRequest()
             req_template.write_stream = self.stream_name
+            if self.proto_data is None:
+                raise RuntimeError("missing self.proto_data")
             req_template.proto_rows = self.proto_data
             self.stream = writer.AppendRowsStream(self.client, req_template)
             logging.info(f"created write stream {self.stream_name}")
@@ -223,6 +235,7 @@ class BigQuerySink:
         """
         if self.client is None:
             self.client = BigQueryWriteClient(client_info=self.client_info)
+            self._latent_init()
 
         if stream:
             self.client.finalize_write_stream(name=stream)
@@ -240,6 +253,7 @@ class BigQuerySink:
         """
         if self.client is None:
             self.client = BigQueryWriteClient(client_info=self.client_info)
+            self._latent_init()
 
         commit_req = types.BatchCommitWriteStreamsRequest()
         commit_req.parent = self.parent

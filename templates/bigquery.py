@@ -427,10 +427,6 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
         logger.info(f"sent {cnt:,} rows to BigQuery using {len(streams):,} "
                     f"stream(s) in {duration:,.3f}s ({cnt/duration:,.2f} rows/s)")
 
-        # 4. Commit and make data live.
-        #bq.commit(streams)
-        #logger.info(f"commited {cnt:,} rows to {bq.parent}")
-
 
 class BigQueryToNeo4jGDSTemplate(BaseTemplate): # type: ignore
     """
