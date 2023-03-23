@@ -190,9 +190,9 @@ def read_edges(client: na.Neo4jArrowClient) -> \
 
 
 def append_batch(sink: BigQuerySink) \
-        -> Callable[[Iterable[Union[Node, Edge]]],
+        -> Callable[[Iterable[List[bytes]]],
                     Iterable[Tuple[str, int]]]:
-    def _append_batch(batch: Iterable[Union[Node, Edge]]) \
+    def _append_batch(batch: Iterable[List[bytes]]) \
             -> Iterable[Tuple[str, int]]:
         cnt = 0
         for b in batch:
