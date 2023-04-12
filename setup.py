@@ -11,8 +11,8 @@ setup(
     name="neo4j-bigquery-connector",
     version=__version__,
 
-    url="https://github.com/neo4j-field/dataproc-templates",
-    author="Neo4j",
+    url="https://github.com/neo4j-field/bigquery-connector",
+    author="Neo4j, Inc.",
     author_email="dave.voutila@neo4j.com",
 
     description="A connector for building a Neo4j Graph from Google BigQuery",
