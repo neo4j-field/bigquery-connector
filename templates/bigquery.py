@@ -192,15 +192,21 @@ def read_edges(client: na.Neo4jArrowClient) -> \
 def append_batch(sink: BigQuerySink) \
         -> Callable[[Iterable[List[bytes]]],
                     Iterable[Tuple[str, int]]]:
+    """
+    Create an appender to a BigQuery table using the provided BigQuerySink.
+    """
     def _append_batch(batch: Iterable[List[bytes]]) \
             -> Iterable[Tuple[str, int]]:
         cnt = 0
         for b in batch:
             sink.append_rows(b)
             cnt += len(b)
-        logging.info(f"appended {cnt:,} rows")
-        sink.finalize_write_stream()
-        yield cast(str, sink.stream_name), cnt
+        if cnt > 0:
+            # It's possible we were given an empty iterable. If so, the
+            # call to finalize_write_stream will fail.
+            logging.info(f"appended {cnt:,} rows")
+            sink.finalize_write_stream()
+            yield cast(str, sink.stream_name), cnt
     return _append_batch
 
 class Neo4jGDSToBigQueryTemplate(BaseTemplate): # type: ignore
