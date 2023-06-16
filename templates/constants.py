@@ -31,9 +31,7 @@ NEO4J_FORCE = "neo4j_force"
 
 NEO4J_USER = "neo4j_user"
 NEO4J_PASSWORD = "neo4j_password"
-NEO4J_SECRET = "neo4j_secret" # TODO
-NEO4J_HOST = "neo4j_host"
-NEO4J_PORT = "neo4j_port"
-NEO4J_BOLT_PORT = "neo4j_bolt_port"
-NEO4J_USE_TLS = "neo4j_use_tls"
+NEO4J_SECRET = "neo4j_secret"
+NEO4J_URI = "neo4j_uri"
 NEO4J_CONCURRENCY = "neo4j_concurrency"
+NEO4J_ACTION = "neo4j_action"

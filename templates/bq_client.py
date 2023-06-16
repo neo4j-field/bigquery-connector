@@ -5,13 +5,14 @@ Helper classes for interacting with BigQuery via the Storage API.
 """
 import logging
 
-### XXX this is hell...truly I am in hell.
+# Replace path to ignore packages that comes in "spark-bigquery-support"
 import sys
+
 logging.info(f"original path: {sys.path}")
-newpath = [p for p in sys.path if not "spark-bigquery-support" in p]
-sys.path = newpath
+new_path = [p for p in sys.path if not "spark-bigquery-support" in p]
+sys.path = new_path
 logging.info(f"new path: {sys.path}")
-#######
+#
 
 from google.cloud.bigquery_storage import (
     BigQueryReadClient, BigQueryWriteClient, DataFormat, ReadSession
@@ -23,7 +24,6 @@ from google.api_core.gapic_v1.client_info import ClientInfo
 from google.api_core.future import Future
 
 import pyarrow as pa
-import neo4j_arrow as na
 
 from .constants import USER_AGENT
 
@@ -50,7 +50,7 @@ class BigQuerySource:
     of streams that the BigQueryReadClient can fetch.
     """
     client: Optional[BigQueryReadClient] = None
-    client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT) # type: ignore
+    client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT)  # type: ignore
 
     def __init__(self, project_id: str, dataset: str, *,
                  data_format: int = DataFormat.ARROW,
@@ -92,7 +92,7 @@ class BigQuerySource:
             data_format=self.data_format
         )
         if fields:
-            read_session.read_options.selected_fields=fields
+            read_session.read_options.selected_fields = fields
 
         session = self.client.create_read_session(
             parent=f"projects/{self.project_id}",
@@ -104,27 +104,31 @@ class BigQuerySource:
     def consume_stream(self, bq_stream: BQStream) -> DataStream:
         """
         Generate a stream of structured data (Arrow or Avro) from a BigQuery
-        table using the Storate Read API.
+        table using the Storage Read API.
         """
         table, stream = bq_stream
         if getattr(self, "client", None) is None:
             self.client = BigQueryReadClient(client_info=self.client_info)
 
-        rows = (
+        rows_stream = (
             cast(BigQueryReadClient, self.client)
-            .read_rows(stream) # type: ignore
-            .rows()
+            .read_rows(stream)
         )
+
         if self.data_format == DataFormat.ARROW:
+            rows = rows_stream.rows()
             for page in rows.pages:
                 arrow = page.to_arrow()
                 schema = arrow.schema.with_metadata({"_table": table})
                 yield arrow.from_arrays(arrow.columns, schema=schema)
         elif self.data_format == DataFormat.AVRO:
-            raise RuntimeError("AVRO support unfinished")
-            #for page in rows.pages:
-                # TODO: schema updates to specify the source table
-                #yield page.to_dataframe()
+            rows = rows_stream.rows()
+            for page in rows.pages:
+                df = page.to_dataframe()
+                table = pa.Table.from_pandas(df)
+                schema = table.schema.with_metadata({"_table": table})
+                for batch in table.to_batches():
+                    yield pa.RecordBatch.from_arrays(batch.columns, schema=schema)
         else:
             raise ValueError("invalid data format")
 
@@ -134,7 +138,7 @@ class BigQuerySink:
     Wrapper around a BigQuery table. Uses the Storage API to write data.
     """
     client: Optional[BigQueryWriteClient] = None
-    client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT) # type: ignore
+    client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT)  # type: ignore
 
     def __init__(self, project_id: str, dataset: str, table: str,
                  descriptor: descriptor_pb2.DescriptorProto):
@@ -148,10 +152,10 @@ class BigQuerySink:
         self.offset: int = 0
         self.stream: Optional[Any] = None
         self.stream_name: Optional[str] = None
-        self.callback: Optional[Any] = None # TODO: callback fn
+        self.callback: Optional[Any] = None  # TODO: callback fn
 
         self.serialized_proto_data: bytes = descriptor.SerializeToString()
-        self.proto_data: Optional[Any] = None # TODO: typing
+        self.proto_data: Optional[Any] = None  # TODO: typing
 
     def __str__(self) -> str:
         return f"BigQuerySink({self.parent})"
@@ -160,7 +164,7 @@ class BigQuerySink:
         """
         Latent initialization to support pickling.
         """
-         # XXX maybe move this?
+        # XXX maybe move this?
         proto_schema = types.ProtoSchema()
         descriptor = descriptor_pb2.DescriptorProto()
         descriptor.ParseFromString(self.serialized_proto_data)
@@ -192,7 +196,7 @@ class BigQuerySink:
             #
             write_stream_type = types.WriteStream()
             write_stream_type.type_ = cast(
-                types.WriteStream.Type, types.WriteStream.Type.COMMITTED # XXX
+                types.WriteStream.Type, types.WriteStream.Type.COMMITTED  # XXX
             )
             write_stream = self.client.create_write_stream(
                 parent=self.parent, write_stream=write_stream_type,
@@ -224,7 +228,7 @@ class BigQuerySink:
             future.add_done_callback(self.callback)
         self.futures.append(future)
         self.offset += len(rows)
-        return cast(str, self.stream_name), len(rows) # XXX ignoring offset for now
+        return cast(str, self.stream_name), len(rows)  # XXX ignoring offset for now
 
     def finalize_write_stream(self, stream: str = "") -> Tuple[str, int]:
         """
@@ -240,11 +244,11 @@ class BigQuerySink:
         if stream:
             self.client.finalize_write_stream(name=stream)
         elif self.stream_name:
-            self.wait_for_completion(5 * 60) # XXX 5 mins... yolo!
+            self.wait_for_completion(5 * 60)  # XXX 5 mins... yolo!
             self.client.finalize_write_stream(name=self.stream_name)
         else:
             raise RuntimeError("no valid stream name")
-        return self.stream_name, self.offset # type: ignore # should be non-None at this point
+        return self.stream_name, self.offset  # type: ignore # should be non-None at this point
 
     def commit(self, streams: List[str] = []) -> None:
         """
@@ -271,6 +275,6 @@ class BigQuerySink:
         """
         for future in self.futures:
             try:
-                future.result(timeout=timeout_secs) # type: ignore
+                future.result(timeout=timeout_secs)  # type: ignore
             except Exception as e:
                 pass

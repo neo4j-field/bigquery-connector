@@ -3,11 +3,12 @@
 """
 Utility functions.
 """
+import logging
 import os
 import json
+import typing
 
 from typing import cast, Dict, List
-
 
 BQ_PARAM_PREFIX = "BIGQUERY_PROC_PARAM."
 
@@ -62,3 +63,34 @@ def fetch_secret(secret_id: str) -> Dict[str, str]:
     except Exception as e:
         print(f"failed to get secret {secret_id}: {e}")
     return {}
+
+
+class SparkLogHandler(logging.Handler):
+
+    def __init__(self, logger: typing.Any):
+        super().__init__()
+        if not logger:
+            raise Exception("logger must be provided.")
+        self.logger = logger
+
+    def handle(self, record: logging.LogRecord) -> bool:
+        msg = f"[{record.name}] {record.getMessage()}"
+
+        if record.levelno == logging.CRITICAL:
+            self.logger.fatal(msg)
+        elif record.levelno == logging.FATAL:
+            self.logger.fatal(msg)
+        elif record.levelno == logging.ERROR:
+            self.logger.error(msg)
+        elif record.levelno == logging.WARNING:
+            self.logger.warn(msg)
+        elif record.levelno == logging.WARN:
+            self.logger.warn(msg)
+        elif record.levelno == logging.INFO:
+            self.logger.info(msg)
+        elif record.levelno == logging.DEBUG:
+            self.logger.debug(msg)
+        else:
+            self.logger.info(msg)
+
+        return True

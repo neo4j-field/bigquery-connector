@@ -1,4 +1,6 @@
 import json
+import logging
+
 import pyarrow as pa
 
 from . import Node, Edge #, Property, PropertyValueType
@@ -20,6 +22,7 @@ def arrow_to_nodes(arrow: Arrow,
     # TODO schema nonsense for properties?
     rows, cols = arrow.num_rows, arrow.num_columns
     node_ids = arrow.column("nodeId")
+    print(f"received {rows} rows with {cols} columns")
 
     _labels: Union[List[str], pa.lib.ListArray]
     if labels:
@@ -31,7 +34,7 @@ def arrow_to_nodes(arrow: Arrow,
     else:
         _labels = arrow.column("labels")
 
-    # XXX naieve approach using field names for now
+    # XXX naive approach using field names for now
     # N.b. We need to rely on the schema if using RecordBatches.
     props = [n for n in arrow.schema.names if n not in ["nodeId", "labels"]]
 

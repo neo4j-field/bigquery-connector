@@ -1,4 +1,4 @@
-neo4j_arrow@https://github.com/neo4j-field/neo4j_arrow/archive/refs/tags/0.5.0.tar.gz
+neo4j_arrow@https://github.com/neo4j-field/neo4j_arrow/archive/refs/tags/0.6.0.tar.gz
 google-dataproc-templates>=0.2.0b
 google-cloud-bigquery-storage[pyarrow]>=2.18
 google-cloud-secret-manager>=2.16
