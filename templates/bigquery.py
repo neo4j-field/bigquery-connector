@@ -9,6 +9,7 @@ import neo4j.exceptions
 
 import time
 
+import pandas
 from google.protobuf import descriptor_pb2
 from dataproc_templates import BaseTemplate
 
@@ -17,6 +18,7 @@ from pyspark.sql import SparkSession
 
 import neo4j_arrow as na
 
+import pattern_parser.Pattern
 from .bq_client import BigQuerySource, BigQuerySink, BQStream
 from .vendored import strtobool
 from . import constants as c, util
@@ -150,55 +152,65 @@ def batch_converter(converter: Callable[[Arrow, List[str]], Generator[Union[Node
 
 
 def read_nodes(client: na.Neo4jArrowClient) -> \
-        Callable[[Tuple[Dict[str, str], List[str]]], List[Arrow]]:
+        Callable[[pattern_parser.NodePattern], Tuple[pattern_parser.Pattern, pandas.DataFrame]]:
     """
     Stream nodes and node properties from Neo4j.
     """
 
-    def _read_nodes(config: Tuple[Dict[str, str], List[str]]) -> Arrow:
-        properties, topo_filters = config
-        cnt, log_cnt, sz = 0, 0, 0
+    def _read_nodes(pattern: pattern_parser.NodePattern) -> Tuple[pattern_parser.Pattern, pandas.DataFrame]:
+        # rows: List[Arrow] = []
+        # cnt, log_cnt, sz = 0, 0, 0
         logging.info(f"streaming nodes from {client}")
-        rows = client.read_nodes(properties, labels=topo_filters)
-        for batch in client.read_nodes(properties, labels=topo_filters):
-            rows.append(batch)
-            cnt += batch.num_rows
-            sz += batch.nbytes
-            # for now we need some logging since this is an eager job
-            log_cnt += batch.num_rows
-            if log_cnt > 100_000:
-                logging.info(f"...read {log_cnt:,} nodes")
-                log_cnt = 0
-        logging.info(f"read {cnt:,} nodes, {sz:,} bytes")
-        return rows
+        tb: pa.Table = client.read_nodes(pattern.properties, labels=[pattern.label])
+        return pattern, tb.to_pandas()
+        # for batch in client.read_nodes(properties, labels=topo_filters):
+        #     rows.append(batch)
+        #     cnt += batch.num_rows
+        #     sz += batch.nbytes
+        #     # for now we need some logging since this is an eager job
+        #     log_cnt += batch.num_rows
+        #     if log_cnt > 100_000:
+        #         logging.info(f"...read {log_cnt:,} nodes")
+        #         log_cnt = 0
+        # logging.info(f"read {cnt:,} nodes, {sz:,} bytes")
+        # return rows
 
     return _read_nodes
 
 
 def read_edges(client: na.Neo4jArrowClient) -> \
-        Callable[[Tuple[Dict[str, str], List[str]]], List[Arrow]]:
+        Callable[[pattern_parser.EdgePattern], Tuple[pattern_parser.Pattern, pandas.DataFrame]]:
     """
     Stream edges and edge properties from Neo4j.
     """
 
-    def _read_edges(config: Tuple[Dict[str, str], List[str]]) -> List[Arrow]:
-        properties, topo_filters = config
-        rows: List[Arrow] = []
-        cnt, log_cnt, sz = 0, 0, 0
-        for batch in client.read_edges(properties=properties,
-                                       relationship_types=topo_filters):
-            rows.append(batch)
-            cnt += batch.num_rows
-            sz += batch.nbytes
-            # for now we need some logging since this is an eager job
-            log_cnt += batch.num_rows
-            if log_cnt > 100_000:
-                logging.info(f"...read {log_cnt:,} edges")
-                log_cnt = 0
-        logging.info(f"read {cnt:,} edges, {sz:,} bytes")
-        return rows
+    def _read_edges(pattern: pattern_parser.EdgePattern) -> Tuple[pattern_parser.Pattern, pandas.DataFrame]:
+        # properties, topo_filters = config
+        # rows: List[Arrow] = []
+        # cnt, log_cnt, sz = 0, 0, 0
+        tb: pa.Table = client.read_edges(properties=pattern.properties,
+                                         relationship_types=[pattern.type])
+        return pattern, tb.to_pandas()
+        #     rows.append(batch)
+        #     cnt += batch.num_rows
+        #     sz += batch.nbytes
+        #     # for now we need some logging since this is an eager job
+        #     log_cnt += batch.num_rows
+        #     if log_cnt > 100_000:
+        #         logging.info(f"...read {log_cnt:,} edges")
+        #         log_cnt = 0
+        # logging.info(f"read {cnt:,} edges, {sz:,} bytes")
+        # return rows
 
     return _read_edges
+
+
+def read_by_pattern(client: na.Neo4jArrowClient, pattern: pattern_parser.Pattern) -> \
+        Tuple[pattern_parser.Pattern, pandas.DataFrame]:
+    if isinstance(pattern, pattern_parser.NodePattern):
+        return read_nodes(client)(pattern)
+    else:
+        return read_edges(client)(pattern)
 
 
 def append_batch(sink: BigQuerySink) \
@@ -331,8 +343,13 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
 
         # BigQuery Parameters
         parser.add_argument(
-            f"--{c.BQ_TABLE}",
-            help="BigQuery table to write the Neo4j data.",
+            f"--{c.BQ_NODE_TABLE}",
+            help="BigQuery table to write the Neo4j nodes data.",
+            type=str,
+        )
+        parser.add_argument(
+            f"--{c.BQ_EDGE_TABLE}",
+            help="BigQuery table to write the Neo4j edges data.",
             type=str,
         )
         parser.add_argument(
@@ -347,30 +364,10 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
         )
 
         parser.add_argument(
-            f"--{c.NEO4J_LABELS}",
-            help="Comma-separated list of labels to read from Neo4j.",
-            type=lambda x: [y.strip() for y in str(x).split(",")],
-            default=["*"],
-        )
-        parser.add_argument(
-            f"--{c.NEO4J_TYPES}",
-            help="Comma-separated list of relationship types to read from Neo4j.",
-            type=lambda x: [y.strip() for y in str(x).split(",")],
-            default=["*"],
-        )
-        parser.add_argument(
-            f"--{c.NEO4J_PROPERTIES}",
-            help="Comma-separated list of properties to read from Neo4j.",
-            type=lambda x: [y.strip() for y in str(x).split(",")],
-            default=[],
-        )
-
-        # Simple mode switching for now; nodes or edges
-        parser.add_argument(
-            f"--{c.BQ_SINK_MODE}",
-            help="BigQuery Sink mode ('nodes' or 'edges')",
-            type=str,
-            default="nodes",
+            f"--{c.NEO4J_PATTERNS}",
+            help="Comma-separated list of node/edge patterns to read from Neo4j.",
+            type=lambda x: pattern_parser.parse_pattern(x),
+            required=True
         )
 
         # Optional/Other Parameters
@@ -389,6 +386,8 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
             ns, _ = parser.parse_known_args(args)
         return vars(ns)
 
+    # TODO: validate required table arguments based on patterns
+
     def run(self, spark: SparkSession, args: Dict[str, Any]) -> None:
         sc = spark.sparkContext
         if args[c.DEBUG]:
@@ -398,8 +397,9 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
 
         logger = self.get_logger(spark)
         logger.info(
-            f"starting job for {args[c.BQ_PROJECT]}/{args[c.BQ_DATASET]}/"
-            f"{args[c.BQ_TABLE]}"
+            f"starting job for {args[c.NEO4J_PATTERNS]} into "
+            f"{args[c.BQ_PROJECT]}/{args[c.BQ_DATASET]}/{args[c.BQ_NODE_TABLE]} and "
+            f"{args[c.BQ_PROJECT]}/{args[c.BQ_DATASET]}/{args[c.BQ_EDGE_TABLE]} "
             f"(server concurrency={args[c.NEO4J_CONCURRENCY]})"
         )
 
@@ -424,44 +424,35 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
                                     int(args[c.NEO4J_CONCURRENCY]), logger=logger)
         logger.info(f"using neo4j client {client}")
 
-        # XXX fallback to Edge for now
-        descriptor = descriptor_pb2.DescriptorProto()
-        if args[c.BQ_SINK_MODE].lower() == "nodes":
-            Node.DESCRIPTOR.CopyToProto(descriptor)
-        else:
-            Edge.DESCRIPTOR.CopyToProto(descriptor)
-
-        bq = BigQuerySink(
-            args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_TABLE], descriptor
+        node_bq = BigQuerySink(
+            args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_NODE_TABLE], Node.DESCRIPTOR
         )
-        logger.info(f"created sink {bq}")
-
-        # 1. Fetch and process rows from Neo4j
-        # XXX for now, we single-thread this in the Spark driver
-        properties = args[c.NEO4J_PROPERTIES]
-        if properties is None or properties == [""] or properties == ["null"]:
-            # This most likely happens from BigQuery, so help convert to valid input.
-            properties = []
+        edge_bq = BigQuerySink(
+            args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_EDGE_TABLE], Edge.DESCRIPTOR
+        )
+        logger.info(f"created sinks {node_bq} and {edge_bq}")
 
         converter: Optional[Any] = None  # XXX
-        if args[c.BQ_SINK_MODE].lower() == "nodes":
-            topo_filters = args[c.NEO4J_LABELS]
-            converter = arrow_to_nodes
-            reading_fn = read_nodes(client)
-            logger.info(
-                f"reading nodes (labels={topo_filters}, properties={properties})"
-            )
-        elif args[c.BQ_SINK_MODE].lower() == "edges":
-            topo_filters = args[c.NEO4J_TYPES]
-            converter = arrow_to_edges
-            reading_fn = read_edges(client)
-            logger.info(
-                f"reading edges (types={topo_filters}, properties={properties})"
-            )
-        else:
-            raise ValueError(
-                "invalid sink mode; expected either 'nodes' or 'edges'"
-            )
+        # if args[c.BQ_SINK_MODE].lower() == "nodes":
+        #     topo_filters = args[c.NEO4J_LABELS]
+        #     converter = arrow_to_nodes
+        #     reading_fn = read_nodes(client)
+        #     logger.info(
+        #         f"reading nodes (labels={topo_filters}, properties={properties})"
+        #     )
+        # elif args[c.BQ_SINK_MODE].lower() == "edges":
+        #     topo_filters = args[c.NEO4J_TYPES]
+        #     converter = arrow_to_edges
+        #     reading_fn = read_edges(client)
+        #     logger.info(
+        #         f"reading edges (types={topo_filters}, properties={properties})"
+        #     )
+        # else:
+        #     raise ValueError(
+        #         "invalid sink mode; expected either 'nodes' or 'edges'"
+        #     )
+        #
+        patterns: list[pattern_parser.Pattern] = args[c.NEO4J_PATTERNS]
 
         # Depending on the Spark environment, we may or may not be able to
         # identify the number of executor cores. For now, let's fallback to
@@ -469,22 +460,30 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
         num_partitions = max(sc.defaultParallelism, args[c.NEO4J_CONCURRENCY])
         logger.info(f"using {num_partitions:,} partitions")
         start_time = time.time()
-        results: List[Tuple[str, int]] = (
+        all_tables: list = (
             sc
-            .parallelize([(properties, topo) for topo in topo_filters])  # Seed with our config
-            .flatMap(reading_fn)  # Stream the data from Neo4j. XXX this is eager!
-            .repartition(num_partitions)  # Repartition to get concurrency.
-            .map(batch_converter(converter, topo_filters))  # -> List[ProtoBufs]
-            .mapPartitions(append_batch(bq))  # Ship 'em to BigQuery!
+            .parallelize(patterns)
+            .map(lambda pattern: read_by_pattern(client, pattern))
+            .groupBy(lambda result: result[0].type())
+            .map(lambda result: (result[0], pandas.concat([item[1] for item in result[1]], ignore_index=True)))
             .collect()
         )
+
+        print(all_tables)
+
+        #     .repartition(num_partitions)  # Repartition to get concurrency.
+        #     .map(batch_converter(converter, topo_filters))  # -> List[ProtoBufs]
+        #     .mapPartitions(append_batch(bq))  # Ship 'em to BigQuery!
+        #     .collect()
+        # )
         duration = time.time() - start_time
 
+        logger.info(f"sent rows to BigQuery in {duration:,.3f}s")
         # Crude, but let's do this for now.
-        streams: List[str] = [r[0] for r in results]
-        cnt: int = sum([r[1] for r in results])
-        logger.info(f"sent {cnt:,} rows to BigQuery using {len(streams):,} "
-                    f"stream(s) in {duration:,.3f}s ({cnt / duration:,.2f} rows/s)")
+        # streams: List[str] = [r[0] for r in results]
+        # cnt: int = sum([r[1] for r in results])
+        # logger.info(f"sent {cnt:,} rows to BigQuery using {len(streams):,} "
+        #             f"stream(s) in {duration:,.3f}s ({cnt / duration:,.2f} rows/s)")
 
     def get_logger(self, spark: SparkSession) -> logging.Logger:
         log_4j_logger = spark.sparkContext._jvm.org.apache.log4j  # pylint: disable=protected-access

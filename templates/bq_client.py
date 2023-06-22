@@ -141,7 +141,7 @@ class BigQuerySink:
     client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT)  # type: ignore
 
     def __init__(self, project_id: str, dataset: str, table: str,
-                 descriptor: descriptor_pb2.DescriptorProto):
+                 descriptor: Any):
         self.project_id = project_id
         self.dataset = dataset
         self.table = table
@@ -154,7 +154,10 @@ class BigQuerySink:
         self.stream_name: Optional[str] = None
         self.callback: Optional[Any] = None  # TODO: callback fn
 
-        self.serialized_proto_data: bytes = descriptor.SerializeToString()
+        ser_proto_data = descriptor_pb2.DescriptorProto()
+        descriptor.CopyToProto(ser_proto_data)
+        self.serialized_proto_data: bytes = ser_proto_data
+
         self.proto_data: Optional[Any] = None  # TODO: typing
 
     def __str__(self) -> str:

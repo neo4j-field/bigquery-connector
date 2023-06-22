@@ -5,3 +5,4 @@ google-cloud-secret-manager>=2.16
 graphdatascience==1.6
 pyarrow>=4,<11
 fsspec[gcs]>=2023.1.0
+antlr4-python3-runtime>=4.13.0

@@ -9,6 +9,9 @@ if __name__ == "__main__":
         SparkSession
         .builder
         .appName("Neo4j -> BigQuery Connector")
+        .config("spark.executor.memory", "32G")
+        .config("spark.driver.memory", "32G")
+        .config("spark.driver.maxResultSize", "4G")
         .getOrCreate()
     )
 
