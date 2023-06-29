@@ -13,21 +13,21 @@ Dataproc onto the Spark environment.
 To build:
 
 ```
-$ docker build -t "eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.4.0" .
+$ docker build -t "eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.5.0" .
 ```
 
 Then push to Google Container Registry (GCR):
 
 ```
-$ docker push "eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.4.0"
+$ docker push "eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.5.0"
 ```
 
 > Note: you will need to enable your local gcloud tooling to help
-> authenticate.  Try running: `gcloud auth configure-docker`
+> authenticate. Try running: `gcloud auth configure-docker`
 
 ## Running
 
-The template has been tested with AuraDS as well as self-managed Neo4j
+The template has been tested with AuraDS as well as self-managed GDS with Neo4j
 v5 Enterprise.
 
 ### Network Prerequisites
@@ -41,7 +41,7 @@ and possibly Cloud NAT. (Cloud NAT is definitely needed for AuraDS.)
 If you want the fastest way to validate any changes, you can run the
 PySpark jobs locally by running the entrypoint scripts.
 
-First, install dependences into your virtual environment:
+First, install dependencies into your virtual environment:
 
 ```
 $ . venv/bin/activate  # assumes `venv` is your virtual env directory
@@ -49,17 +49,31 @@ $ . venv/bin/activate  # assumes `venv` is your virtual env directory
 (venv) $ pip install -r requirements-dev.txt
 ```
 
-> Note: You may also need to install a Java 11 JRE and make sure
+> Note: You may also need to install a Java 11/17 JRE and make sure
 > `JAVA_HOME` is set.
 
 Then invoke one of the `main*.py` entrypoint scripts using the command
 line arguments supported by the template. For example:
 
+For BigQuery to GDS/AuraDS data movement;
+
 ```
-(venv) $ python main_to_bq.py --graph_name=mag240 \
+(venv) $ python main.py --graph_name=mag240 --neo4j_db_name=neo4j \
+    --neo4j_action="create_graph" \
     --neo4j_secret="projects/1055617507124/secrets/neo4j-bigquery-demo-2/versions/2" \
-    --bq_project=neo4j-se-team-201905 --bq_dataset=bqr_neo4j_demo --bq_table=results_nodes \
-    --bq_sink_mode=nodes --neo4j_labels=Paper --neo4j_properties=flag,years
+    --graph_uri="gcs://my-storage/graph-model.json" \
+    --bq_project=neo4j-se-team-201905 --bq_dataset=bqr_neo4j_demo \
+    --node_tables=AUTHOR,PAPER --edge_tables=PUBLISHED
+```
+
+For GDS/AuraDB to BigQuery data movement;
+
+```
+(venv) $ python main_to_bq.py --graph_name=mag240 --neo4j_db_name=neo4j \
+    --neo4j_secret="projects/1055617507124/secrets/neo4j-bigquery-demo-2/versions/2" \
+    --bq_project=neo4j-se-team-201905 --bq_dataset=bqr_neo4j_demo --bq_node_table=results_nodes \
+    --bq_edge_table=results_edges \
+    --neo4j_patterns="(:Paper{flag,years}),[:PUBLISHED{year}],(:Author{id})"
 ```
 
 ### Submitting a Dataproc Serverless Job
@@ -83,13 +97,16 @@ PROPERTIES="${PROPERTIES},spark.dynamicAllocation.minExecutors=${SPARK_EXE_COUNT
 
 gcloud dataproc batches submit pyspark \
     --region="europe-west1" \
-    --version="2.0" \
+    --version="2.1" \
     --deps-bucket="gs://your-bucket" \
-    --container-image="gcr.io/your-gcp-project/neo4j-bigquery-connector:0.3.0" \
+    --container-image="gcr.io/your-gcp-project/neo4j-bigquery-connector:0.6.0" \
     --properties="${PROPERTIES}" \
     main.py -- \
+    --graph_name=mag240 \
     --graph_uri="gs://your-bucket/folder/model.json" \
+    --neo4j_database=neo4j \
     --neo4j_secret="projects/123456/secrets/neo4j-bigquery/versions/1" \
+    --neo4j_action="create_graph" \
     --bq_project="your-gcp-project" \
     --bq_dataset="your_bq_dataset" \
     --node_tables="papers,authors,institution" \
@@ -106,7 +123,7 @@ Customize (1) for your GCP environment and (2) for your AuraDS and
 BigQuery environments as needed.
 
 > Note: you can put configuration values in a JSON document stored in
-> a Google Secret Manager secret (that's a mouthful). Us the
+> a Google Secret Manager secret (that's a mouthful). Use the
 > `--neo4j_secret` parameter to pass in the full resource id (which
 > should include the secret version number).
 
@@ -119,33 +136,23 @@ documentation. Assuming you've got your environment properly
 configured and enrolled in the preview program to use Spark for stored
 procedures, you need to create your stored procedure.
 
-
 ### Creating the BigQuery --> Neo4j Procedure:
 
 ```
 CREATE OR REPLACE PROCEDURE
-  `my-gcp-project.my_bigquery_dataset.neo4j_gds_graph_project`(
-    graph_name STRING,
+  `my-gcp-project.your_bigquery_dataset.neo4j_gds_graph_project`(graph_name STRING,
     graph_uri STRING,
     neo4j_secret STRING,
     bq_project STRING,
     bq_dataset STRING,
     node_tables ARRAY<STRING>,
     edge_tables ARRAY<STRING>)
-WITH CONNECTION `your-gcp-project.eu.my-spark-connection` OPTIONS (
-    engine='SPARK',
-    runtime_version='2.0',
-    container_image='eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.4.0',
+WITH CONNECTION `your-gcp-project.eu.spark-connection` OPTIONS (engine='SPARK',
+    runtime_version='2.1',
+    container_image='europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.0',
     properties=[],
     description="Project a graph from BigQuery into Neo4j AuraDS or GDS.")
-LANGUAGE python AS R"""
-
-import sys
-print(f"original path: {sys.path}")
-newpath = [p for p in sys.path if not "spark-bigquery-support" in p]
-sys.path = newpath
-print(f"new path: {sys.path}")
-
+  LANGUAGE python AS R"""
 from pyspark.sql import SparkSession
 from templates import BigQueryToNeo4jGDSTemplate
 
@@ -157,7 +164,7 @@ spark = (
 )
 
 template = BigQueryToNeo4jGDSTemplate()
-args = template.parse_args()
+args = template.parse_args(["--neo4j_action=create_graph"])
 template.run(spark, args)
 """;
 ```
@@ -170,9 +177,9 @@ Some details on the inputs:
   for your data
 - `neo4j_secret` -- a Google Secret Manager secret resource id
   containing a JSON blob with additional arguments:
-  * `neo4j_user` -- name of the Neo4j user to connect as
-  * `neo4j_password` -- password for the given user
-  * `neo4j_host` -- hostname (_not Bolt uri_) of the AuraDS instance
+    * `neo4j_user` -- name of the Neo4j user to connect as
+    * `neo4j_password` -- password for the given user
+    * `neo4j_host` -- hostname (_not Bolt uri_) of the AuraDS instance
 - `bq_project` -- GCP project id owning the BigQuery source data
 - `bq_dataset` -- BigQuery dataset name for the source data
 - `node_tables` -- an `ARRAY<STRING>` of BigQuery table names representing nodes
@@ -200,6 +207,7 @@ CALL `your-gcp-project.your_bq_dataset.neo4j_gds_graph_project`(
 ```
 
 ### Creating the Neo4j --> BigQuery Procedures
+
 One Dataproc template (`Neo4jGDSToBigQueryTemplate`) supports writing
 Nodes or Relationships back to BigQuery from AuraDS/GDS. The mode is
 simply toggled via a `--bq_sink_mode` parameter that can either be
@@ -207,30 +215,25 @@ hardcoded (like below) to make distinct stored procedures or exposed
 as a parameter for the user to populate.
 
 For Nodes:
+
 ```sql
-CREATE OR REPLACE PROCEDURE
-  `my-gcp-project.my_bigquery_dataset.neo4j_gds_stream_nodes`(
-    graph_name STRING,
+CREATE
+OR REPLACE PROCEDURE
+  `your-gcp-project.your_bigquery_dataset.neo4j_gds_stream_graph`(graph_name STRING,
     neo4j_secret STRING,
     bq_project STRING,
     bq_dataset STRING,
-    bq_table STRING,
-    neo4j_labels ARRAY<STRING>,
-    neo4j_properties ARRAY<STRING>)
-WITH CONNECTION `your-gcp-project.eu.my-spark-connection` OPTIONS (
-    engine='SPARK',
-    runtime_version='2.0',
-    container_image='eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.4.0',
-    properties=[("spark.executor.cores", "8"), ("spark.executor.memory", "16g")],
-    description="Stream nodes from Neo4j AuraDS to BigQuery")
+    bq_node_table STRING,
+    bq_edge_table STRING,
+    neo4j_patterns ARRAY<STRING>)
+WITH CONNECTION `team-connectors-dev.eu.spark-connection` OPTIONS (engine='SPARK',
+    runtime_version='2.1',
+    container_image='europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.0',
+    properties=[("spark.driver.cores", "8"),
+        ("spark.driver.maxResultSize", "4g"),
+        ("spark.driver.memory", "16g")],
+    description="Stream graph entities from Neo4j AuraDS/GDS to BigQuery")
   LANGUAGE python AS R"""
-# Need to back out this Spark BigQuery Support stuff.
-import sys
-print(f"original path: {sys.path}")
-newpath = [p for p in sys.path if not "spark-bigquery-support" in p]
-sys.path = newpath
-print(f"new path: {sys.path}")
-
 from pyspark.sql import SparkSession
 from templates import Neo4jGDSToBigQueryTemplate
 
@@ -242,58 +245,7 @@ spark = (
 )
 
 template = Neo4jGDSToBigQueryTemplate()
-hardcoded = [
-    "--bq_sink_mode=nodes",
-]
-args = template.parse_args(hardcoded)
-template.run(spark, args)
-""";
-```
-
-For Relationships:
-```sql
-CREATE OR REPLACE PROCEDURE
-  `my-gcp-project.my_bigquery_dataset.neo4j_gds_stream_edges`(
-    graph_name STRING,
-    neo4j_secret STRING,
-    bq_project STRING,
-    bq_dataset STRING,
-    bq_table STRING,
-    neo4j_types ARRAY<STRING>,
-    neo4j_properties ARRAY<STRING>)
-WITH CONNECTION `neo4j-se-team-201905.eu.voutila-bq-spark-eu` OPTIONS (engine='SPARK',
-    runtime_version='2.0',
-    container_image='eu.gcr.io/my-gcp-project/neo4j-bigquery-connector:0.4.0',
-    properties=[
-      ("spark.executor.cores", "8"),
-      ("spark.executor.memory", "32g"),
-      ("spark.dynamicAllocation.executorAllocationRatio", "1.0")
-    ],
-    description="Stream relationships from Neo4j AuraDS to BigQuery")
-  LANGUAGE python AS R"""
-# Need to back out this Spark BigQuery Support stuff.
-import sys
-print(f"original path: {sys.path}")
-newpath = [p for p in sys.path if not "spark-bigquery-support" in p]
-sys.path = newpath
-print(f"new path: {sys.path}")
-
-from pyspark.sql import SparkSession
-from templates import Neo4jGDSToBigQueryTemplate
-
-spark = (
-	SparkSession
-	.builder
-	.appName("Neo4j -> BigQuery Connector")
-	.getOrCreate()
-)
-
-template = Neo4jGDSToBigQueryTemplate()
-hardcoded = [
-    "--bq_sink_mode=edges",
-]
-args = template.parse_args(hardcoded)
-print(f"args: {args}")
+args = template.parse_args()
 template.run(spark, args)
 """;
 ```
@@ -303,27 +255,23 @@ Some details on the inputs:
 - `graph_name` -- the name of the graph in AuraDS you're reading
 - `neo4j_secret` -- a Google Secret Manager secret resource id
   containing a JSON blob with additional arguments:
-  * `neo4j_user` -- name of the Neo4j user to connect as
-  * `neo4j_password` -- password for the given user
-  * `neo4j_host` -- hostname (_not Bolt uri_) of the AuraDS instance
+    * `neo4j_user` -- name of the Neo4j user to connect as
+    * `neo4j_password` -- password for the given user
+    * `neo4j_host` -- hostname (_not Bolt uri_) of the AuraDS instance
 - `bq_project` -- GCP project id owning the BigQuery source data
 - `bq_dataset` -- BigQuery dataset name for the source data
-- `bq_table` -- BigQuery name to write to
-- `bq_sink_mode` -- either `"nodes"` or `"edges"`, to toggle the mode
-- `neo4j_properties` -- an `ARRAY<STRING>` of property filters
-
-Parameter(s) specific to `nodes` sink mode:
-- `neo4j_labels` -- an `ARRAY<STRING>` of node label filters
-
-Parameter(s) specific to `edges` sink mode:
-- `neo4j_types` -- an `ARRAY<STRING>` of relationship type filters
+- `bq_node_table` -- BigQuery table name to write nodes into
+- `bq_edge_table` -- BigQuery table name to write edges into
+- `neo4j_patterns` -- an `ARRAY<STRING>` of neo4j patterns to query from GDS/AuraDS, in the form of
+  Cypher style node or relationship patterns. e.g. `(:Author{id,birth_year})` for nodes, `[:KNOWS{since_year}]` for
+  relationships.
 
 > Note: Writing back to BigQuery is currently subject to
-> preplanning your Spark environment to accomodate data sizes.
-> See [Dataproc Serverless docs](https://cloud.google.com/dataproc-serverless/docs/concepts/properties#resource_allocation_properties)
+> pre-planning your Spark environment to accommodate data sizes.
+>
+See [Dataproc Serverless docs](https://cloud.google.com/dataproc-serverless/docs/concepts/properties#resource_allocation_properties)
 > for options for increasing CPU or memory for Spark
 > workers/executors.
-
 
 ## Current Caveats
 
