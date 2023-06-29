@@ -1,3 +1,5 @@
+import typing
+
 from antlr4 import *
 
 from .PatternLexer import PatternLexer
@@ -8,6 +10,14 @@ from .PatternParser import PatternParser
 class Pattern:
     def type(self):
         raise NotImplemented()
+
+    @staticmethod
+    def is_node(p: typing.Any) -> bool:
+        return isinstance(p, NodePattern)
+
+    @staticmethod
+    def is_edge(p: typing.Any) -> bool:
+        return isinstance(p, EdgePattern)
 
 
 class NodePattern(Pattern):

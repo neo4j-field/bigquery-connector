@@ -1,16 +1,18 @@
 # Copyright (c) "Neo4j"
 # Neo4j Sweden AB [https://neo4j.com]
 import argparse
+import concurrent
+import itertools
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import neo4j
 import neo4j.exceptions
 
 import time
 
-import pandas
-from google.protobuf import descriptor_pb2
+import pyarrow.parquet
 from dataproc_templates import BaseTemplate
 
 import pyarrow as pa
@@ -20,7 +22,6 @@ import neo4j_arrow as na
 
 import pattern_parser.Pattern
 from .bq_client import BigQuerySource, BigQuerySink, BQStream
-from .vendored import strtobool
 from . import constants as c, util
 
 from model import Node, Edge, arrow_to_nodes, arrow_to_edges
@@ -135,105 +136,76 @@ def to_stream_fn(mode: str, bq: BigQuerySource,
     return _to_stream
 
 
-def batch_converter(converter: Callable[[Arrow, List[str]], Generator[Union[Node, Edge], None, None]],
-                    topo_filters: List[str]) -> Callable[[Arrow], List[bytes]]:
-    """
-    Takes column-oriented batches of Arrow buffers and turn them into lists of
-    graph elements (Node or Edge protobufs).
-    """
-
-    def _batch_converter(arrow: Arrow) -> List[bytes]:
-        batch: List[bytes] = []
-        for graph_element in converter(arrow, topo_filters):
-            batch.append(graph_element.SerializeToString())
-        return batch
-
-    return _batch_converter
+def convert_batch(arrow: Arrow, converter: Callable[[Arrow], Generator[Any, None, None]]) -> List[bytes]:
+    batch: List[bytes] = []
+    for graph_element in converter(arrow):
+        batch.append(graph_element.SerializeToString())
+    return batch
 
 
-def read_nodes(client: na.Neo4jArrowClient) -> \
-        Callable[[pattern_parser.NodePattern], Tuple[pattern_parser.Pattern, pandas.DataFrame]]:
-    """
-    Stream nodes and node properties from Neo4j.
-    """
-
-    def _read_nodes(pattern: pattern_parser.NodePattern) -> Tuple[pattern_parser.Pattern, pandas.DataFrame]:
-        # rows: List[Arrow] = []
-        # cnt, log_cnt, sz = 0, 0, 0
-        logging.info(f"streaming nodes from {client}")
-        tb: pa.Table = client.read_nodes(pattern.properties, labels=[pattern.label])
-        return pattern, tb.to_pandas()
-        # for batch in client.read_nodes(properties, labels=topo_filters):
-        #     rows.append(batch)
-        #     cnt += batch.num_rows
-        #     sz += batch.nbytes
-        #     # for now we need some logging since this is an eager job
-        #     log_cnt += batch.num_rows
-        #     if log_cnt > 100_000:
-        #         logging.info(f"...read {log_cnt:,} nodes")
-        #         log_cnt = 0
-        # logging.info(f"read {cnt:,} nodes, {sz:,} bytes")
-        # return rows
-
-    return _read_nodes
+def read_nodes(client: na.Neo4jArrowClient, pattern: pattern_parser.NodePattern) -> pa.Table:
+    batches = client.read_nodes(pattern.properties, labels=[pattern.label])
+    tb = pa.Table.from_batches(batches)
+    tb = tb.append_column('label', pa.array([pattern.label] * len(tb), pa.string()))
+    return tb
 
 
-def read_edges(client: na.Neo4jArrowClient) -> \
-        Callable[[pattern_parser.EdgePattern], Tuple[pattern_parser.Pattern, pandas.DataFrame]]:
-    """
-    Stream edges and edge properties from Neo4j.
-    """
-
-    def _read_edges(pattern: pattern_parser.EdgePattern) -> Tuple[pattern_parser.Pattern, pandas.DataFrame]:
-        # properties, topo_filters = config
-        # rows: List[Arrow] = []
-        # cnt, log_cnt, sz = 0, 0, 0
-        tb: pa.Table = client.read_edges(properties=pattern.properties,
-                                         relationship_types=[pattern.type])
-        return pattern, tb.to_pandas()
-        #     rows.append(batch)
-        #     cnt += batch.num_rows
-        #     sz += batch.nbytes
-        #     # for now we need some logging since this is an eager job
-        #     log_cnt += batch.num_rows
-        #     if log_cnt > 100_000:
-        #         logging.info(f"...read {log_cnt:,} edges")
-        #         log_cnt = 0
-        # logging.info(f"read {cnt:,} edges, {sz:,} bytes")
-        # return rows
-
-    return _read_edges
+def read_edges(client: na.Neo4jArrowClient, pattern: pattern_parser.EdgePattern) -> pa.Table:
+    batches = client.read_edges(properties=pattern.properties,
+                                relationship_types=[pattern.type])
+    tb = pa.Table.from_batches(batches)
+    tb = tb.append_column('type', pa.array([pattern.type] * len(tb), pa.string()))
+    return tb
 
 
-def read_by_pattern(client: na.Neo4jArrowClient, pattern: pattern_parser.Pattern) -> \
-        Tuple[pattern_parser.Pattern, pandas.DataFrame]:
+def read_by_pattern(client: na.Neo4jArrowClient, pattern: pattern_parser.Pattern) -> pa.Table:
     if isinstance(pattern, pattern_parser.NodePattern):
-        return read_nodes(client)(pattern)
+        return read_nodes(client, pattern)
+    elif isinstance(pattern, pattern_parser.EdgePattern):
+        return read_edges(client, pattern)
     else:
-        return read_edges(client)(pattern)
+        raise TypeError(f"expected an instance of Pattern, but got {pattern.__class__.__name__}")
 
 
-def append_batch(sink: BigQuerySink) \
-        -> Callable[[Iterable[List[bytes]]],
-        Iterable[Tuple[str, int]]]:
-    """
-    Create an appender to a BigQuery table using the provided BigQuerySink.
-    """
+def concat_tables(tables: list[pa.Table]) -> pa.Table:
+    # see if all tables are in the same schema, if so we can use a zero-copy concatenation
+    promote = False
+    prev_schema = tables[0].schema
+    for schema in [tb.schema for tb in tables[1:]]:
+        if not prev_schema.equals(schema):
+            promote = True
+            break
 
-    def _append_batch(batch: Iterable[List[bytes]]) \
-            -> Iterable[Tuple[str, int]]:
-        cnt = 0
-        for b in batch:
-            sink.append_rows(b)
-            cnt += len(b)
-        if cnt > 0:
-            # It's possible we were given an empty iterable. If so, the
-            # call to finalize_write_stream will fail.
-            logging.info(f"appended {cnt:,} rows")
-            sink.finalize_write_stream()
-            yield cast(str, sink.stream_name), cnt
+    result = pa.concat_tables(tables, promote=promote)
 
-    return _append_batch
+    # check if the tables are for nodes
+    if 'label' in result.schema.names:
+        field_mappings = {}
+        for sch in [tb.schema for tb in tables]:
+            for name in sch.names:
+                if name not in field_mappings and name != "nodeId":
+                    field_mappings[name] = "one"
+        field_mappings["label"] = "list"
+
+        # group all rows by nodeId and collect labels into a single column of list
+        aggregations = list(field_mappings.items())
+        result = result.group_by(["nodeId"]).aggregate(aggregations)
+
+        # aggregate returns modified column names, so let's reset our column names
+        new_column_names = [('labels' if mapping[0] == 'label' else mapping[0]) for mapping in aggregations]
+        new_column_names.append("nodeId")
+        result = result.rename_columns(new_column_names)
+
+    return result
+
+
+def append_batch(batches: Iterable[List[bytes]], sink: BigQuerySink):
+    cnt = 0
+    for batch in batches:
+        sink.append_rows(batch)
+        cnt += len(batch)
+
+    logging.info(f"appended {cnt:,} rows")
 
 
 def build_arrow_client(graph: na.model.Graph, neo4j_uri: str, neo4j_username: str,
@@ -287,6 +259,41 @@ def build_arrow_client(graph: na.model.Graph, neo4j_uri: str, neo4j_username: st
         raise Exception(
             "Please ensure that you're connecting to an AuraDS or a GDS installation "
             "with Arrow Flights Service enabled.")
+
+
+def send_batch(batches: Iterable[Arrow], converter: Callable[[Arrow], Generator[Any, None, None]], sink: BigQuerySink):
+    append_batch([convert_batch(batch, converter) for batch in batches], sink)
+
+
+def split_into_batches(iterable, size) -> Generator[Tuple[int, Any], None, None]:
+    counter = 0
+    it = iter(iterable)
+    item = list(itertools.islice(it, size))
+    while item:
+        yield counter, item
+        item = list(itertools.islice(it, size))
+        counter += 1
+
+
+def process_table(table: pyarrow.Table, num_partitions: int, converter: Callable[[Arrow], Generator[Any, None, None]],
+                  sink_factory: Callable[[], BigQuerySink], *, max_chunk_size: int = 10_000) -> Tuple[int, int]:
+    bq_sinks = [sink_factory() for _ in range(0, num_partitions)]
+    batches = table.to_batches(max_chunksize=max_chunk_size)
+
+    with ThreadPoolExecutor(num_partitions) as executor:
+        futures = [executor.submit(send_batch, batch, converter, bq_sinks[index % num_partitions]) for (index, batch) in
+                   split_into_batches(batches, 5)]
+
+        for future in concurrent.futures.as_completed(futures):
+            if not future.exception():
+                continue
+            raise future.exception()  # type: ignore
+
+    for sink in bq_sinks:
+        sink.finalize_write_stream()
+        sink.commit()
+
+    return num_partitions, table.num_rows
 
 
 class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
@@ -424,66 +431,41 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
                                     int(args[c.NEO4J_CONCURRENCY]), logger=logger)
         logger.info(f"using neo4j client {client}")
 
-        node_bq = BigQuerySink(
-            args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_NODE_TABLE], Node.DESCRIPTOR
-        )
-        edge_bq = BigQuerySink(
-            args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_EDGE_TABLE], Edge.DESCRIPTOR
-        )
-        logger.info(f"created sinks {node_bq} and {edge_bq}")
-
-        converter: Optional[Any] = None  # XXX
-        # if args[c.BQ_SINK_MODE].lower() == "nodes":
-        #     topo_filters = args[c.NEO4J_LABELS]
-        #     converter = arrow_to_nodes
-        #     reading_fn = read_nodes(client)
-        #     logger.info(
-        #         f"reading nodes (labels={topo_filters}, properties={properties})"
-        #     )
-        # elif args[c.BQ_SINK_MODE].lower() == "edges":
-        #     topo_filters = args[c.NEO4J_TYPES]
-        #     converter = arrow_to_edges
-        #     reading_fn = read_edges(client)
-        #     logger.info(
-        #         f"reading edges (types={topo_filters}, properties={properties})"
-        #     )
-        # else:
-        #     raise ValueError(
-        #         "invalid sink mode; expected either 'nodes' or 'edges'"
-        #     )
-        #
         patterns: list[pattern_parser.Pattern] = args[c.NEO4J_PATTERNS]
 
         # Depending on the Spark environment, we may or may not be able to
         # identify the number of executor cores. For now, let's fallback to
         # the neo4j_concurrency setting.
         num_partitions = max(sc.defaultParallelism, args[c.NEO4J_CONCURRENCY])
-        logger.info(f"using {num_partitions:,} partitions")
+        logger.info(f"using {num_partitions:,} streams")
         start_time = time.time()
-        all_tables: list = (
-            sc
-            .parallelize(patterns)
-            .map(lambda pattern: read_by_pattern(client, pattern))
-            .groupBy(lambda result: result[0].type())
-            .map(lambda result: (result[0], pandas.concat([item[1] for item in result[1]], ignore_index=True)))
-            .collect()
-        )
 
-        print(all_tables)
+        num_streams, num_rows = 0, 0
+        if any(filter(pattern_parser.Pattern.is_node, patterns)):
+            # Handle nodes
+            nodes_data = [read_by_pattern(client, pattern) for pattern in
+                          filter(pattern_parser.Pattern.is_node, patterns)]
+            nodes_tb = concat_tables(nodes_data)
+            p_streams, p_rows = process_table(nodes_tb, num_partitions, arrow_to_nodes, lambda: BigQuerySink(
+                args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_NODE_TABLE], Node.DESCRIPTOR, logger=logger
+            ), max_chunk_size=client.max_chunk_size)
+            num_streams += p_streams
+            num_rows += p_rows
 
-        #     .repartition(num_partitions)  # Repartition to get concurrency.
-        #     .map(batch_converter(converter, topo_filters))  # -> List[ProtoBufs]
-        #     .mapPartitions(append_batch(bq))  # Ship 'em to BigQuery!
-        #     .collect()
-        # )
+        if any(filter(pattern_parser.Pattern.is_edge, patterns)):
+            # Handle edges
+            edges_data = [read_by_pattern(client, pattern) for pattern in
+                          filter(pattern_parser.Pattern.is_edge, patterns)]
+            edges_tb = concat_tables(edges_data)
+            p_streams, p_rows = process_table(edges_tb, num_partitions, arrow_to_edges, lambda: BigQuerySink(
+                args[c.BQ_PROJECT], args[c.BQ_DATASET], args[c.BQ_EDGE_TABLE], Edge.DESCRIPTOR, logger=logger
+            ), max_chunk_size=client.max_chunk_size)
+            num_streams += p_streams
+            num_rows += p_rows
+
         duration = time.time() - start_time
-
-        logger.info(f"sent rows to BigQuery in {duration:,.3f}s")
-        # Crude, but let's do this for now.
-        # streams: List[str] = [r[0] for r in results]
-        # cnt: int = sum([r[1] for r in results])
-        # logger.info(f"sent {cnt:,} rows to BigQuery using {len(streams):,} "
-        #             f"stream(s) in {duration:,.3f}s ({cnt / duration:,.2f} rows/s)")
+        logger.info(f"sent {num_rows:,} rows to BigQuery using {num_streams:,} "
+                    f"stream(s) in {duration:,.3f}s ({num_rows / duration:,.2f} rows/s)")
 
     def get_logger(self, spark: SparkSession) -> logging.Logger:
         log_4j_logger = spark.sparkContext._jvm.org.apache.log4j  # pylint: disable=protected-access

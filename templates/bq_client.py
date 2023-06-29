@@ -141,7 +141,7 @@ class BigQuerySink:
     client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT)  # type: ignore
 
     def __init__(self, project_id: str, dataset: str, table: str,
-                 descriptor: Any):
+                 descriptor: Any, *, logger: logging.Logger = None):
         self.project_id = project_id
         self.dataset = dataset
         self.table = table
@@ -154,9 +154,13 @@ class BigQuerySink:
         self.stream_name: Optional[str] = None
         self.callback: Optional[Any] = None  # TODO: callback fn
 
+        if not logger:
+            logger = logging.getLogger("BigQuerySink")
+        self.logger = logger
+
         ser_proto_data = descriptor_pb2.DescriptorProto()
         descriptor.CopyToProto(ser_proto_data)
-        self.serialized_proto_data: bytes = ser_proto_data
+        self.serialized_proto_data: bytes = ser_proto_data.SerializeToString()
 
         self.proto_data: Optional[Any] = None  # TODO: typing
 
@@ -178,7 +182,7 @@ class BigQuerySink:
     @staticmethod
     def print_completion(f: Future) -> None:
         """Print the future to stdout."""
-        logging.info(f"completed {f}")
+        self.logger.info(f"completed {f}")
 
     def append_rows(self, rows: List[bytes]) -> Tuple[str, int]:
         """
@@ -211,12 +215,12 @@ class BigQuerySink:
                 raise RuntimeError("missing self.proto_data")
             req_template.proto_rows = self.proto_data
             self.stream = writer.AppendRowsStream(self.client, req_template)
-            logging.info(f"created write stream {self.stream_name}")
+            self.logger.info(f"created write stream {self.stream_name}")
 
         # Process our batch.
         # XXX For now, we ignore any API limits and hope for the best.
         proto_rows = types.ProtoRows()
-        logging.info(f"appending {len(rows):,} rows to {self.stream_name}")
+        self.logger.info(f"appending {len(rows):,} rows to {self.stream_name}")
         for row in rows:
             proto_rows.serialized_rows.append(row)
 

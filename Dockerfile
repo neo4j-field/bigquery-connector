@@ -40,3 +40,4 @@ RUN mkdir -p "${PYTHONPATH}" \
 FROM pybase
 COPY model "${PYTHONPATH}"/model
 COPY templates "${PYTHONPATH}"/templates
+COPY pattern_parser "${PYTHONPATH}"/pattern_parser
