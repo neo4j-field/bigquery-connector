@@ -290,8 +290,9 @@ def process_table(table: pyarrow.Table, num_partitions: int, converter: Callable
             raise future.exception()  # type: ignore
 
     for sink in bq_sinks:
-        sink.finalize_write_stream()
-        sink.commit()
+        if sink.stream_name:
+            sink.finalize_write_stream()
+            sink.commit()
 
     return num_partitions, table.num_rows
 
