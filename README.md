@@ -13,13 +13,13 @@ Dataproc onto the Spark environment.
 To build:
 
 ```
-$ docker build -t "eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.5.0" .
+$ docker build -t "eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.6.0" .
 ```
 
 Then push to Google Container Registry (GCR):
 
 ```
-$ docker push "eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.5.0"
+$ docker push "eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.6.0"
 ```
 
 > Note: you will need to enable your local gcloud tooling to help
