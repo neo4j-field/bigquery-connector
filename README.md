@@ -13,13 +13,13 @@ Dataproc onto the Spark environment.
 To build:
 
 ```
-$ docker build -t "eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.6.0" .
+$ docker build -t "europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.0"
 ```
 
-Then push to Google Container Registry (GCR):
+Then push to Google Artifact Registry:
 
 ```
-$ docker push "eu.gcr.io/your-gcp-project/neo4j-bigquery-connector:0.6.0"
+$ docker push "europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.0"
 ```
 
 > Note: you will need to enable your local gcloud tooling to help
@@ -58,7 +58,7 @@ line arguments supported by the template. For example:
 For BigQuery to GDS/AuraDS data movement;
 
 ```
-(venv) $ python main.py --graph_name=mag240 --neo4j_db_name=neo4j \
+(venv) $ python main.py --graph_name=mag240 --neo4j_db=neo4j \
     --neo4j_action="create_graph" \
     --neo4j_secret="projects/1055617507124/secrets/neo4j-bigquery-demo-2/versions/2" \
     --graph_uri="gcs://my-storage/graph-model.json" \
@@ -69,7 +69,7 @@ For BigQuery to GDS/AuraDS data movement;
 For GDS/AuraDB to BigQuery data movement;
 
 ```
-(venv) $ python main_to_bq.py --graph_name=mag240 --neo4j_db_name=neo4j \
+(venv) $ python main_to_bq.py --graph_name=mag240 --neo4j_db=neo4j \
     --neo4j_secret="projects/1055617507124/secrets/neo4j-bigquery-demo-2/versions/2" \
     --bq_project=neo4j-se-team-201905 --bq_dataset=bqr_neo4j_demo --bq_node_table=results_nodes \
     --bq_edge_table=results_edges \
@@ -99,7 +99,7 @@ gcloud dataproc batches submit pyspark \
     --region="europe-west1" \
     --version="2.1" \
     --deps-bucket="gs://your-bucket" \
-    --container-image="gcr.io/your-gcp-project/neo4j-bigquery-connector:0.6.0" \
+    --container-image="europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.0" \
     --properties="${PROPERTIES}" \
     main.py -- \
     --graph_name=mag240 \
@@ -179,7 +179,7 @@ Some details on the inputs:
   containing a JSON blob with additional arguments:
     * `neo4j_user` -- name of the Neo4j user to connect as
     * `neo4j_password` -- password for the given user
-    * `neo4j_host` -- hostname (_not Bolt uri_) of the AuraDS instance
+    * `neo4j_uri` -- Connection URI of the AuraDS instance
 - `bq_project` -- GCP project id owning the BigQuery source data
 - `bq_dataset` -- BigQuery dataset name for the source data
 - `node_tables` -- an `ARRAY<STRING>` of BigQuery table names representing nodes
@@ -257,7 +257,7 @@ Some details on the inputs:
   containing a JSON blob with additional arguments:
     * `neo4j_user` -- name of the Neo4j user to connect as
     * `neo4j_password` -- password for the given user
-    * `neo4j_host` -- hostname (_not Bolt uri_) of the AuraDS instance
+    * `neo4j_uri` -- Connection URI of the AuraDS instance
 - `bq_project` -- GCP project id owning the BigQuery source data
 - `bq_dataset` -- BigQuery dataset name for the source data
 - `bq_node_table` -- BigQuery table name to write nodes into
