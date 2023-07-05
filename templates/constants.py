@@ -21,7 +21,7 @@ NEO4J_GRAPH_JSON = "graph_json"
 NEO4J_GRAPH_JSON_URI = "graph_uri"
 
 NEO4J_GRAPH_NAME = "graph_name"
-NEO4J_DB_NAME = "neo4j_db_name"
+NEO4J_DB_NAME = "neo4j_db"
 
 NEO4J_PATTERNS = "neo4j_patterns"
 
