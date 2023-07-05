@@ -12,7 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y procps tini libjemalloc2 \
     && apt-get install -y python3 python3-pip \
-    && apt-get auto-remove -y
+    && apt-get clean -y
 
 # Enable jemalloc2 as default memory allocator
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
@@ -40,3 +40,4 @@ RUN mkdir -p "${PYTHONPATH}" \
 FROM pybase
 COPY model "${PYTHONPATH}"/model
 COPY templates "${PYTHONPATH}"/templates
+COPY pattern_parser "${PYTHONPATH}"/pattern_parser
