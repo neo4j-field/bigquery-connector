@@ -5,10 +5,6 @@ __all__ = [
     "NodePattern",
     "EdgePattern",
     "parse_pattern",
-    "__version__",
-    "__author__",
 ]
-__author__ = "Neo4j"
-__version__ = "0.5.1"
 
 from .Pattern import Pattern, NodePattern, EdgePattern, parse_pattern
