@@ -13,15 +13,14 @@ setup(
 
     url="https://github.com/neo4j-field/bigquery-connector",
     author="Neo4j, Inc.",
-    author_email="dave.voutila@neo4j.com",
 
-    description="A connector for building a Neo4j Graph from Google BigQuery",
+    description="Google BigQuery connector for AuraDS & Neo4j with GDS",
     long_description=long_description,
     long_description_content_type="text/markdown",
 
     license="Apache License 2.0",
 
-    classifiers = [
+    classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: Apache Software License",
