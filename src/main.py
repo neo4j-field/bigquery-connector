@@ -5,12 +5,7 @@ from templates import BigQueryToNeo4jGDSTemplate
 
 
 if __name__ == "__main__":
-    spark = (
-        SparkSession
-        .builder
-        .appName("BigQuery -> Neo4j Connector")
-        .getOrCreate()
-    )
+    spark = SparkSession.builder.appName("BigQuery -> Neo4j Connector").getOrCreate()
 
     # XXX Hardcode a single template for now.
     template = BigQueryToNeo4jGDSTemplate()

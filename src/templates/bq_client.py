@@ -6,16 +6,19 @@ Helper classes for interacting with BigQuery via the Storage API.
 import logging
 
 # Replace path to ignore packages that comes in "spark-bigquery-support"
-import sys
-
-logging.info(f"original path: {sys.path}")
-new_path = [p for p in sys.path if not "spark-bigquery-support" in p]
-sys.path = new_path
-logging.info(f"new path: {sys.path}")
+# import sys
+#
+# logging.info(f"original path: {sys.path}")
+# new_path = [p for p in sys.path if "spark-bigquery-support" not in p]
+# sys.path = new_path
+# logging.info(f"new path: {sys.path}")
 #
 
 from google.cloud.bigquery_storage import (
-    BigQueryReadClient, BigQueryWriteClient, DataFormat, ReadSession
+    BigQueryReadClient,
+    BigQueryWriteClient,
+    DataFormat,
+    ReadSession,
 )
 from google.cloud.bigquery_storage_v1 import types, writer
 from google.protobuf import descriptor_pb2, wrappers_pb2
@@ -28,8 +31,16 @@ import pyarrow as pa
 from .constants import USER_AGENT
 
 from typing import (
-    cast, Any, Callable, Dict, Generator, List, NamedTuple, Optional, Union,
-    Tuple
+    cast,
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    NamedTuple,
+    Optional,
+    Union,
+    Tuple,
 )
 
 Arrow = Union[pa.Table, pa.RecordBatch]
@@ -40,6 +51,7 @@ class BQStream(NamedTuple):
     """
     Represents a streamable part of a BQ Table. Used to simplify PySpark jobs.
     """
+
     table: str
     stream: str
 
@@ -49,12 +61,18 @@ class BigQuerySource:
     Wrapper around a BigQuery Dataset. Uses the Storage API to generate a list
     of streams that the BigQueryReadClient can fetch.
     """
-    client: Optional[BigQueryReadClient] = None
-    client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT)  # type: ignore
 
-    def __init__(self, project_id: str, dataset: str, *,
-                 data_format: int = DataFormat.ARROW,
-                 max_stream_count: int = 1_000):
+    client: Optional[BigQueryReadClient] = None
+    client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT)
+
+    def __init__(
+        self,
+        project_id: str,
+        dataset: str,
+        *,
+        data_format: int = DataFormat.ARROW,
+        max_stream_count: int = 1_000,
+    ):
         self.project_id = project_id
         self.dataset = dataset
         self.basepath = f"projects/{self.project_id}/datasets/{self.dataset}"
@@ -75,8 +93,9 @@ class BigQuerySource:
         return state
 
     def copy(self) -> "BigQuerySource":
-        source = BigQuerySource(self.project_id, self.dataset,
-                                max_stream_count=self.max_stream_count)
+        source = BigQuerySource(
+            self.project_id, self.dataset, max_stream_count=self.max_stream_count
+        )
         return source
 
     def table(self, table: str, *, fields: List[str] = []) -> List[BQStream]:
@@ -88,8 +107,7 @@ class BigQuerySource:
             self.client = BigQueryReadClient(client_info=self.client_info)
 
         read_session = ReadSession(
-            table=f"{self.basepath}/tables/{table}",
-            data_format=self.data_format
+            table=f"{self.basepath}/tables/{table}", data_format=self.data_format
         )
         if fields:
             read_session.read_options.selected_fields = fields
@@ -106,20 +124,17 @@ class BigQuerySource:
         Generate a stream of structured data (Arrow or Avro) from a BigQuery
         table using the Storage Read API.
         """
-        table, stream = bq_stream
+        table_name, stream_name = bq_stream
         if getattr(self, "client", None) is None:
             self.client = BigQueryReadClient(client_info=self.client_info)
 
-        rows_stream = (
-            cast(BigQueryReadClient, self.client)
-            .read_rows(stream)
-        )
+        rows_stream = cast(BigQueryReadClient, self.client).read_rows(stream_name)
 
         if self.data_format == DataFormat.ARROW:
             rows = rows_stream.rows()
             for page in rows.pages:
                 arrow = page.to_arrow()
-                schema = arrow.schema.with_metadata({"_table": table})
+                schema = arrow.schema.with_metadata({"_table": table_name})
                 yield arrow.from_arrays(arrow.columns, schema=schema)
         elif self.data_format == DataFormat.AVRO:
             rows = rows_stream.rows()
@@ -137,11 +152,19 @@ class BigQuerySink:
     """
     Wrapper around a BigQuery table. Uses the Storage API to write data.
     """
-    client: Optional[BigQueryWriteClient] = None
-    client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT)  # type: ignore
 
-    def __init__(self, project_id: str, dataset: str, table: str,
-                 descriptor: Any, *, logger: logging.Logger = None):
+    client: Optional[BigQueryWriteClient] = None
+    client_info: ClientInfo = ClientInfo(user_agent=USER_AGENT)
+
+    def __init__(
+        self,
+        project_id: str,
+        dataset: str,
+        table: str,
+        descriptor: Any,
+        *,
+        logger: Optional[logging.Logger] = None,
+    ):
         self.project_id = project_id
         self.dataset = dataset
         self.table = table
@@ -182,7 +205,8 @@ class BigQuerySink:
     @staticmethod
     def print_completion(f: Future) -> None:
         """Print the future to stdout."""
-        self.logger.info(f"completed {f}")
+        logger = logging.getLogger("BigQuerySink")
+        logger.info(f"completed {f}")
 
     def append_rows(self, rows: List[bytes]) -> Tuple[str, int]:
         """
@@ -206,7 +230,8 @@ class BigQuerySink:
                 types.WriteStream.Type, types.WriteStream.Type.COMMITTED  # XXX
             )
             write_stream = self.client.create_write_stream(
-                parent=self.parent, write_stream=write_stream_type,
+                parent=self.parent,
+                write_stream=write_stream_type,
             )
             self.stream_name = write_stream.name
             req_template = types.AppendRowsRequest()
@@ -282,6 +307,6 @@ class BigQuerySink:
         """
         for future in self.futures:
             try:
-                future.result(timeout=timeout_secs)  # type: ignore
-            except Exception as e:
+                future.result(timeout=timeout_secs)
+            except Exception:
                 pass

@@ -51,6 +51,7 @@ def fetch_secret(secret_id: str) -> Dict[str, str]:
     """
     try:
         from google.cloud import secretmanager
+
         client = secretmanager.SecretManagerServiceClient()
         request = secretmanager.AccessSecretVersionRequest(name=secret_id)
         secret = client.access_secret_version(request=request)
@@ -66,7 +67,6 @@ def fetch_secret(secret_id: str) -> Dict[str, str]:
 
 
 class SparkLogHandler(logging.Handler):
-
     def __init__(self, logger: typing.Any):
         super().__init__()
         if not logger:

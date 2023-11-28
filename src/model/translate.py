@@ -16,7 +16,7 @@ def arrow_to_nodes(arrow: Arrow) -> Generator[Node, None, None]:
     """
     # TODO assert schema
     # TODO schema nonsense for properties?
-    rows, cols = arrow.num_rows, arrow.num_columns
+    rows = arrow.num_rows
     node_ids = arrow.column("nodeId")
     labels = arrow.column("labels")
 
@@ -27,9 +27,12 @@ def arrow_to_nodes(arrow: Arrow) -> Generator[Node, None, None]:
     for row in range(rows):
         node = Node()
         node.node_id = node_ids[row].as_py()
-        for label in list(labels[row]):
+        for label in list(labels[row].as_py()):
             node.labels.append(str(label))
-        items = filter(lambda kv: kv[1] is not None, [(key, arrow.column(key)[row].as_py()) for key in props])
+        items = filter(
+            lambda kv: kv[1] is not None,
+            [(key, arrow.column(key)[row].as_py()) for key in props],
+        )
         if items:
             node.properties = json.dumps(dict(items))
         else:
@@ -44,7 +47,7 @@ def arrow_to_edges(arrow: Arrow) -> Generator[Edge, None, None]:
     XXX types is unused currently and exists to match the signature of
         arrow_to_nodes
     """
-    rows, cols = arrow.num_rows, arrow.num_columns
+    rows = arrow.num_rows
     source_node_ids = arrow.column("sourceNodeId")
     target_node_ids = arrow.column("targetNodeId")
     types = arrow.column("relationshipType")
@@ -52,7 +55,8 @@ def arrow_to_edges(arrow: Arrow) -> Generator[Edge, None, None]:
     # XXX naive approach using field names for now
     # N.b. We need to rely on the schema if using RecordBatches.
     props = [
-        n for n in arrow.schema.names
+        n
+        for n in arrow.schema.names
         if n not in ["sourceNodeId", "targetNodeId", "relationshipType"]
     ]
 
@@ -61,7 +65,10 @@ def arrow_to_edges(arrow: Arrow) -> Generator[Edge, None, None]:
         edge.source_node_id = source_node_ids[row].as_py()
         edge.target_node_id = target_node_ids[row].as_py()
         edge.type = types[row].as_py()
-        items = filter(lambda kv: kv[1] is not None, [(key, arrow.column(key)[row].as_py()) for key in props])
+        items = filter(
+            lambda kv: kv[1] is not None,
+            [(key, arrow.column(key)[row].as_py()) for key in props],
+        )
         if items:
             edge.properties = json.dumps(dict(items))
         else:

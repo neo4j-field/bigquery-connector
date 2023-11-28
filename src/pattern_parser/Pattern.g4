@@ -27,7 +27,7 @@ properties
 property
     : name
     ;
-    
+
 name
     : ID
     | ESC_LITERAL

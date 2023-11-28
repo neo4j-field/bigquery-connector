@@ -1,3 +1,0 @@
-pytest>=7.2
-mypy>=1.0
-types-protobuf

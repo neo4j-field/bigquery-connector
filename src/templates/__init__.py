@@ -11,10 +11,17 @@ __all__ = [
     "__version__",
     "__author__",
 ]
-__author__ = "Neo4j"
-__version__ = "0.6.0"
 
-from . import constants, util
+from importlib import metadata
+
+__author__ = "Neo4j"
+__version__ = "dev"
+try:
+    __version__ = metadata.version("bigquery-connector")
+except metadata.PackageNotFoundError:
+    pass
+
+from templates import constants, util
 from .bq_client import BigQuerySource, BigQuerySink
 from .bigquery import BigQueryToNeo4jGDSTemplate, Neo4jGDSToBigQueryTemplate
 from .vendored import strtobool

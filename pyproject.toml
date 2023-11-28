@@ -1,7 +1,39 @@
-[tool.mypy]
-python_version = 3.9
-warn_return_any = true
-warn_unused_configs = true
-exclude = ["venv"]
-ignore_missing_imports = true
-strict = true
+[tool.poetry]
+name = "bigquery-connector"
+version = "0.6.1"
+description = "Neo4j Connector for Google BigQuery"
+authors = ["Connectors Team <connectors@neo4j.com>"]
+readme = "README.md"
+packages = [{ include = "model", from = "src" }, { include = "pattern_parser", from = "src" }, { include = "templates", from = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.9, <4"
+google-dataproc-templates = "^0.4.0b0"
+google-cloud-bigquery-storage = { extras = ["pyarrow"], version = "^2.22.0" }
+google-cloud-secret-manager = "^2.16.4"
+antlr4-python3-runtime = "^4.13.1"
+fsspec = { extras = ["gcs"], version = "^2023.10.0" }
+neo4j-arrow = { git = "https://github.com/neo4j-field/neo4j_arrow.git", rev = "main" }
+neo4j = ">=5"
+importlib-metadata = "^6.8.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+mypy = "^1.7.1"
+black = "^23.11.0"
+pre-commit = "^3.5.0"
+flake8 = "^6.1.0"
+flake8-bugbear = "^23.9.16"
+pep8-naming = "^0.13.3"
+flake8-builtins = "^2.2.0"
+flake8-docstrings = "^1.7.0"
+darglint = "^1.8.1"
+flake8-isort = "^6.1.1"
+flake8-spellcheck = "^0.28.0"
+flake8-comprehensions = "^3.14.0"
+flake8-bandit = "^4.1.1"
+types-protobuf = "^4.24.0.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

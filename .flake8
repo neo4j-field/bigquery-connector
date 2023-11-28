@@ -1,0 +1,16 @@
+[flake8]
+max-line-length = 120
+max-complexity = 10
+select = C,E,F,W,B,B950
+ignore = E211, E999, F401, F821, W503, E402
+exclude =
+    .git,
+    .direnv,
+    .tox,
+    dist
+    *.egg-info,
+    .pytest_cache,
+    *_pb2.py,
+    PatternLexer.py,
+    PatternParser.py,
+    PatternListener.py
