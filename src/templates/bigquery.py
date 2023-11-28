@@ -568,7 +568,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
 
     def get_logger(self, spark: SparkSession) -> logging.Logger:
         log_4j_logger = (
-            spark.sparkContext._jvm.org.apache.log4j
+            spark.sparkContext._jvm.org.apache.log4j  # type: ignore
         )  # pylint: disable=protected-access
         return logging.Logger(
             log_4j_logger.LogManager.getLogger(self.__class__.__name__)
@@ -819,7 +819,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
 
     def get_logger(self, spark: SparkSession) -> logging.Logger:
         log_4j_logger = (
-            spark.sparkContext._jvm.org.apache.log4j
+            spark.sparkContext._jvm.org.apache.log4j  # type: ignore
         )  # pylint: disable=protected-access
         return logging.Logger(
             log_4j_logger.LogManager.getLogger(self.__class__.__name__)

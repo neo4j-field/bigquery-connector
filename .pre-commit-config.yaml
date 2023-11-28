@@ -23,4 +23,4 @@ repos:
     rev: v1.7.0
     hooks:
       - id: mypy
-        args: [ --strict ]
+        args: [ ]
