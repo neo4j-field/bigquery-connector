@@ -10,7 +10,7 @@ RUN apt update && apt install -y procps tini libjemalloc2 git curl && apt clean 
 # Enable jemalloc2 as default memory allocator
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
-# (Optional) Install and configure Miniconda3.
+# Install Miniconda3.
 ENV CONDA_HOME=/opt/miniconda3
 ENV PYSPARK_PYTHON=${CONDA_HOME}/bin/python
 ENV PATH=${CONDA_HOME}/bin:${PATH}
@@ -22,63 +22,9 @@ RUN curl -L --fail https://repo.anaconda.com/miniconda/Miniconda3-py39_23.10.0-1
   && ${CONDA_HOME}/bin/conda config --system --set channel_priority strict \
   && rm -rf /tmp/miniconda.sh
 
-# (Optional) Install Conda packages.
-#
-# The following packages are installed in the default image, it is strongly
-# recommended to include all of them.
-#
-# Use mamba to install packages quickly.
-#RUN ${CONDA_HOME}/bin/conda install mamba -n base -c conda-forge \
-#    && ${CONDA_HOME}/bin/mamba install \
-#      conda \
-#      cython \
-#      fastavro \
-#      fastparquet \
-#      gcsfs \
-#      google-cloud-bigquery-storage \
-#      google-cloud-bigquery[pandas] \
-#      google-cloud-bigtable \
-#      google-cloud-container \
-#      google-cloud-datacatalog \
-#      google-cloud-dataproc \
-#      google-cloud-datastore \
-#      google-cloud-language \
-#      google-cloud-logging \
-#      google-cloud-monitoring \
-#      google-cloud-pubsub \
-#      google-cloud-redis \
-#      google-cloud-spanner \
-#      google-cloud-speech \
-#      google-cloud-storage \
-#      google-cloud-texttospeech \
-#      google-cloud-translate \
-#      google-cloud-vision \
-#      koalas \
-#      matplotlib \
-#      nltk \
-#      numba \
-#      numpy \
-#      openblas \
-#      orc \
-#      pandas \
-#      pyarrow \
-#      pysal \
-#      pytables \
-#      python \
-#      regex \
-#      requests \
-#      rtree \
-#      scikit-image \
-#      scikit-learn \
-#      scipy \
-#      seaborn \
-#      sqlalchemy \
-#      sympy \
-#      virtualenv
-
+# Build Neo4j Connector for BigQuery
 FROM base AS builder
 
-# Build Neo4j Connector for BigQuery
 ENV PYTHONPATH=/opt/python/packages
 WORKDIR /tmp/code
 COPY . .
@@ -89,9 +35,9 @@ RUN mkdir -p "${PYTHONPATH}" \
       && poetry build \
       && poetry export --format=requirements.txt --output=/tmp/code/requirements.txt --only=main --without-hashes
 
+# Install
 FROM base
 
-# Install
 ENV PYTHONPATH=/opt/python/packages
 COPY --from=builder /tmp/code/requirements.txt /tmp/requirements.txt
 COPY --from=builder /tmp/code/dist/*.whl /tmp/
