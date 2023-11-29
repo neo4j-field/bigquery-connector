@@ -13,13 +13,13 @@ Dataproc onto the Spark environment.
 To build:
 
 ```
-$ docker build -t "europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.0"
+$ docker build -t "europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.1"
 ```
 
 Then push to Google Artifact Registry:
 
 ```
-$ docker push "europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.0"
+$ docker push "europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.1"
 ```
 
 > Note: you will need to enable your local gcloud tooling to help
@@ -99,7 +99,7 @@ gcloud dataproc batches submit pyspark \
     --region="europe-west1" \
     --version="2.1" \
     --deps-bucket="gs://your-bucket" \
-    --container-image="europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.0" \
+    --container-image="europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.1" \
     --properties="${PROPERTIES}" \
     main.py -- \
     --graph_name=mag240 \
@@ -149,7 +149,7 @@ CREATE OR REPLACE PROCEDURE
     edge_tables ARRAY<STRING>)
 WITH CONNECTION `your-gcp-project.eu.spark-connection` OPTIONS (engine='SPARK',
     runtime_version='2.1',
-    container_image='europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.0',
+    container_image='europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.1',
     properties=[],
     description="Project a graph from BigQuery into Neo4j AuraDS or GDS.")
   LANGUAGE python AS R"""
@@ -228,7 +228,7 @@ OR REPLACE PROCEDURE
     neo4j_patterns ARRAY<STRING>)
 WITH CONNECTION `team-connectors-dev.eu.spark-connection` OPTIONS (engine='SPARK',
     runtime_version='2.1',
-    container_image='europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.0',
+    container_image='europe-west2-docker.pkg.dev/your-gcp-project/connectors/neo4j-bigquery-connector:0.6.1',
     properties=[("spark.driver.cores", "8"),
         ("spark.driver.maxResultSize", "4g"),
         ("spark.driver.memory", "16g")],

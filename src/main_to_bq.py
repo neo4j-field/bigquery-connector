@@ -6,9 +6,7 @@ from templates import Neo4jGDSToBigQueryTemplate
 
 if __name__ == "__main__":
     spark = (
-        SparkSession
-        .builder
-        .appName("Neo4j -> BigQuery Connector")
+        SparkSession.builder.appName("Neo4j -> BigQuery Connector")
         .config("spark.executor.memory", "32G")
         .config("spark.driver.memory", "32G")
         .config("spark.driver.maxResultSize", "4G")

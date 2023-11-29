@@ -7,7 +7,7 @@ util: vendored functions from the CPython distribution
 24-Feb-2023: added types (Dave Voutila)
 """
 
-__license__ =  """
+__license__ = """
 Copyright (c) 2022 Python Software Foundation
 PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
 --------------------------------------------
@@ -68,9 +68,9 @@ def strtobool(val: str) -> int:
     'val' is anything else.
     """
     val = val.lower()
-    if val in ('y', 'yes', 't', 'true', 'on', '1'):
+    if val in ("y", "yes", "t", "true", "on", "1"):
         return 1
-    elif val in ('n', 'no', 'f', 'false', 'off', '0'):
+    elif val in ("n", "no", "f", "false", "off", "0"):
         return 0
     else:
         raise ValueError("invalid truth value %r" % (val,))
