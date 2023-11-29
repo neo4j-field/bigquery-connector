@@ -1406,12 +1406,12 @@ files = [
 
 [[package]]
 name = "neo4j"
-version = "5.14.1"
+version = "5.15.0"
 description = "Neo4j Bolt driver for Python"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "neo4j-5.14.1.tar.gz", hash = "sha256:3200be8550ed16622b2fadf4f749d08b9982989c4bfce6f99ab693f104104cb4"},
+    {file = "neo4j-5.15.0.tar.gz", hash = "sha256:5c53eccf5192ac21463d3fac05cf58f1547ed231b953c837aa4393e2fc713ed3"},
 ]
 
 [package.dependencies]
@@ -1435,10 +1435,8 @@ develop = false
 pyarrow = ">=10, <15"
 
 [package.source]
-type = "git"
-url = "https://github.com/neo4j-field/neo4j_arrow.git"
-reference = "main"
-resolved_reference = "7e79be6daefb6c7b84fa1b5ecacf912a91099ec1"
+type = "directory"
+url = "../neo4j_arrow"
 
 [[package]]
 name = "nodeenv"
@@ -2235,4 +2233,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9, <4"
-content-hash = "115102c28c4588b8ab6caf607df9d2482551e96befa479719d384ac7ddaffba3"
+content-hash = "26b4e570c4f48f8cee903830cd338cf605a3944b239e31d8278f118a388ca660"
