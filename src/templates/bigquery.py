@@ -218,24 +218,6 @@ def concat_tables(tables: list[pa.Table]) -> pa.Table:
 
     result = pa.concat_tables(tables, promote=promote)
 
-    # check if the tables are for nodes
-    # if 'label' in result.schema.names:
-    #     field_mappings = {}
-    #     for sch in [tb.schema for tb in tables]:
-    #         for name in sch.names:
-    #             if name not in field_mappings and name != "nodeId":
-    #                 field_mappings[name] = "one"
-    #     field_mappings["label"] = "list"
-
-    #         # group all rows by nodeId and collect labels into a single column of list
-    #         aggregations = list(field_mappings.items())
-    #         result = result.group_by(["nodeId"]).aggregate(aggregations)
-
-    #         # aggregate returns modified column names, so let's reset our column names
-    #         new_column_names = [('labels' if mapping[0] == 'label' else mapping[0]) for mapping in aggregations]
-    #         new_column_names.append("nodeId")
-    #         result = result.rename_columns(new_column_names)
-
     return result
 
 
