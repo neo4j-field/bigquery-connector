@@ -38,15 +38,13 @@ and possibly Cloud NAT. (Cloud NAT is definitely needed for AuraDS.)
 
 ### Running Locally
 
-If you want the fastest way to validate any changes, you can run the
-PySpark jobs locally by running the entrypoint scripts.
+This project uses [poetry]() as the build tool.
+Install `poetry`, define your environment with `poetry env use` and invoke `poetry install` to install dependencies.
 
-First, install dependencies into your virtual environment:
+To build;
 
 ```
-$ . venv/bin/activate  # assumes `venv` is your virtual env directory
-(venv) $ pip install -r requirements.txt
-(venv) $ pip install -r requirements-dev.txt
+poetry build
 ```
 
 > Note: You may also need to install a Java 11/17 JRE and make sure
@@ -58,7 +56,7 @@ line arguments supported by the template. For example:
 For BigQuery to GDS/AuraDS data movement;
 
 ```
-(venv) $ python main.py --graph_name=mag240 --neo4j_db=neo4j \
+$ poetry run python src/main.py --graph_name=mag240 --neo4j_db=neo4j \
     --neo4j_action="create_graph" \
     --neo4j_secret="projects/1055617507124/secrets/neo4j-bigquery-demo-2/versions/2" \
     --graph_uri="gcs://my-storage/graph-model.json" \
@@ -69,7 +67,7 @@ For BigQuery to GDS/AuraDS data movement;
 For GDS/AuraDB to BigQuery data movement;
 
 ```
-(venv) $ python main_to_bq.py --graph_name=mag240 --neo4j_db=neo4j \
+$ poetry run python src/main_to_bq.py --graph_name=mag240 --neo4j_db=neo4j \
     --neo4j_secret="projects/1055617507124/secrets/neo4j-bigquery-demo-2/versions/2" \
     --bq_project=neo4j-se-team-201905 --bq_dataset=bqr_neo4j_demo --bq_node_table=results_nodes \
     --bq_edge_table=results_edges \
