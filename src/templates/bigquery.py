@@ -1,21 +1,19 @@
 # Copyright (c) "Neo4j"
 # Neo4j Sweden AB [https://neo4j.com]
 import argparse
-import concurrent
-import itertools
 import logging
 import sys
-from concurrent.futures import ThreadPoolExecutor
+import typing
 
 import neo4j
 import neo4j.exceptions
 
 import time
 
-import pyarrow.parquet
 from dataproc_templates import BaseTemplate
 
 import pyarrow as pa
+from google.protobuf import descriptor_pb2
 from pyspark.sql import SparkSession
 
 import neo4j_arrow as na
@@ -37,6 +35,7 @@ from typing import (
     Sequence,
     Tuple,
     Union,
+    cast,
 )
 
 __all__ = [
@@ -45,7 +44,6 @@ __all__ = [
 ]
 
 Arrow = Union[pa.Table, pa.RecordBatch]
-ArrowStream = Generator[Arrow, None, None]
 
 
 def load_model_from_gcs(uri: str) -> Optional[na.model.Graph]:
@@ -59,6 +57,21 @@ def load_model_from_gcs(uri: str) -> Optional[na.model.Graph]:
             return na.model.Graph.from_json(f.read())
     except Exception:
         return None
+
+
+def flatten(
+    lists: List[List[Any]], fn: Optional[Callable[[Any], Any]] = None
+) -> List[Any]:
+    """
+    Flatten a list of lists, applying an optional function (fn) to the initial
+    list of lists.
+    """
+    if not fn:
+
+        def fn(x: Any) -> Any:
+            return x
+
+    return [x for y in map(fn, lists) for x in y]
 
 
 def send_nodes(
@@ -99,22 +112,7 @@ def tuple_sum(a: Tuple[int, int], b: Tuple[int, int]) -> Tuple[int, int]:
     """
     Reducing function for summing tuples of integers.
     """
-    return (a[0] + b[0], a[1] + b[1])
-
-
-def flatten(
-    lists: List[List[Any]], fn: Optional[Callable[[Any], Any]] = None
-) -> List[Any]:
-    """
-    Flatten a list of lists, applying an optional function (fn) to the initial
-    list of lists.
-    """
-    if not fn:
-
-        def fn(x: Any) -> Any:
-            return x
-
-    return [x for y in map(fn, lists) for x in y]
+    return a[0] + b[0], a[1] + b[1]
 
 
 def node_to_stream_fn(
@@ -165,69 +163,132 @@ def edge_to_stream_fn(
     return _edge_to_stream
 
 
-def convert_batch(
-    arrow: Arrow, converter: Callable[[Arrow], Generator[Any, None, None]]
-) -> List[bytes]:
-    batch: List[bytes] = []
-    for graph_element in converter(arrow):
-        batch.append(graph_element.SerializeToString())
-    return batch
+def convert_batch_fun(
+    converter: Callable[[Arrow], Generator[Any, None, None]]
+) -> Callable[[Arrow], List[bytes]]:
+    def _convert_batch(arrow: Arrow) -> List[bytes]:
+        batch: List[bytes] = []
+        for graph_element in converter(arrow):
+            batch.append(graph_element.SerializeToString())
+        return batch
+
+    return _convert_batch
 
 
 def read_nodes(
     client: na.Neo4jArrowClient, pattern: pattern_parser.NodePattern
-) -> pa.Table:
-    batches = client.read_nodes(pattern.properties, labels=[pattern.label])
-    tb = pa.Table.from_batches(batches)
-    # tb = tb.append_column('label', pa.array([pattern.label] * len(tb), pa.string()))
-    return tb
+) -> Iterable[pa.RecordBatch]:
+    def _add_labels_column(batch: pa.RecordBatch, label: str) -> pa.RecordBatch:
+        if not batch.field("labels"):
+            labels_col = pa.array(
+                [[label]] * batch.num_rows, pa.large_list(pa.string())
+            )
+            new_schema = batch.schema.append(pa.field("labels", labels_col.type))
+            return pa.RecordBatch.from_arrays(
+                batch.columns + [labels_col], schema=new_schema
+            )
+
+        return batch
+
+    batches: Iterable[pa.RecordBatch] = client.read_nodes(
+        pattern.properties, labels=[pattern.label]
+    )
+    return [_add_labels_column(batch, pattern.label) for batch in batches]
 
 
 def read_edges(
     client: na.Neo4jArrowClient, pattern: pattern_parser.EdgePattern
-) -> pa.Table:
+) -> Iterable[pa.RecordBatch]:
+    def _add_type_column(
+        batch: pa.RecordBatch, relationship_type: str
+    ) -> pa.RecordBatch:
+        type_col = pa.array([relationship_type] * batch.num_rows, pa.string())
+        new_schema = batch.schema.append(pa.field("type", type_col.type))
+        return pa.RecordBatch.from_arrays(batch.columns + [type_col], schema=new_schema)
+
     batches = client.read_edges(
         properties=pattern.properties, relationship_types=[pattern.type]
     )
-    tb = pa.Table.from_batches(batches)
-    tb = tb.append_column("type", pa.array([pattern.type] * len(tb), pa.string()))
-    return tb
+    return [_add_type_column(batch, pattern.type) for batch in batches]
 
 
-def read_by_pattern(
-    client: na.Neo4jArrowClient, pattern: pattern_parser.Pattern
-) -> pa.Table:
-    if isinstance(pattern, pattern_parser.NodePattern):
-        return read_nodes(client, pattern)
-    elif isinstance(pattern, pattern_parser.EdgePattern):
-        return read_edges(client, pattern)
+def read_by_pattern_fun(
+    client: na.Neo4jArrowClient,
+) -> Callable[[pattern_parser.Pattern], Iterable[pa.RecordBatch]]:
+    def _read_by_pattern(pattern: pattern_parser.Pattern) -> Iterable[pa.RecordBatch]:
+        if isinstance(pattern, pattern_parser.NodePattern):
+            return read_nodes(client, pattern)
+        elif isinstance(pattern, pattern_parser.EdgePattern):
+            return read_edges(client, pattern)
+        else:
+            raise ValueError(
+                f"expected an instance of Pattern, but got {pattern.__class__.__name__}"
+            )
+
+    return _read_by_pattern
+
+
+def append_batch_fun(
+    sink_factory: Callable[[], BigQuerySink],
+) -> Callable[[Iterable[List[bytes]]], Iterable[Tuple[str, int]]]:
+    def append_batch(batches: Iterable[List[bytes]]) -> Iterable[Tuple[str, int]]:
+        sink = sink_factory()
+        cnt = 0
+        for batch in batches:
+            sink.append_rows(batch)
+            cnt += len(batch)
+        if cnt > 0:
+            logging.info(f"appended {cnt:,} rows")
+            sink.finalize_write_stream()
+            sink.commit()
+            yield cast(str, sink.stream_name), cnt
+
+    return append_batch
+
+
+def load_graph(args: Dict[str, Any]) -> na.model.Graph:
+    # 1. Load the Graph Model.
+    if args[c.NEO4J_GRAPH_JSON]:
+        # Try loading a literal JSON-based model
+        json_str = args[c.NEO4J_GRAPH_JSON]
+        graph = na.model.Graph.from_json(json_str)
+    elif args[c.NEO4J_GRAPH_JSON_URI]:
+        # Fall back to URI
+        uri = args[c.NEO4J_GRAPH_JSON_URI]
+        graph = load_model_from_gcs(uri)
+        if not graph:
+            raise ValueError(f"failed to load graph from {uri}")
     else:
-        raise ValueError(
-            f"expected an instance of Pattern, but got {pattern.__class__.__name__}"
-        )
+        # Give up :(
+        raise ValueError("missing graph data model uri or literal JSON")
+
+    # 1b. Override graph and/or database name.
+    if c.NEO4J_GRAPH_NAME in args:
+        graph = graph.named(args[c.NEO4J_GRAPH_NAME])
+    if c.NEO4J_DB_NAME in args:
+        graph = graph.in_db(args[c.NEO4J_DB_NAME])
+
+    graph.validate()
+
+    return graph
 
 
-def concat_tables(tables: list[pa.Table]) -> pa.Table:
-    # see if all tables are in the same schema, if so we can use a zero-copy concatenation
-    promote = False
-    prev_schema = tables[0].schema
-    for schema in [tb.schema for tb in tables[1:]]:
-        if not prev_schema.equals(schema):
-            promote = True
-            break
-
-    result = pa.concat_tables(tables, promote=promote)
-
-    return result
-
-
-def append_batch(batches: Iterable[List[bytes]], sink: BigQuerySink) -> None:
-    cnt = 0
-    for batch in batches:
-        sink.append_rows(batch)
-        cnt += len(batch)
-
-    logging.info(f"appended {cnt:,} rows")
+def apply_secrets(args: Dict[str, Any], debug: bool, logger: logging.Logger) -> None:
+    # 2a. Fetch our secret if any
+    logger.info(f"fetching secret {args[c.NEO4J_SECRET]}")
+    secret = util.fetch_secret(args[c.NEO4J_SECRET])
+    if debug:
+        redacted_copy = {}
+        for key in secret:
+            value = secret[key]
+            if key == c.NEO4J_PASSWORD:
+                value = "<redacted>"
+            redacted_copy[key] = value
+        logger.debug(f"fetched secret with values {redacted_copy}")
+    if not secret:
+        logger.warning("failed to fetch secret, falling back to params")
+    else:
+        args.update(secret)
 
 
 def build_arrow_client(
@@ -296,56 +357,16 @@ def build_arrow_client(
         )
 
 
-def send_batch(
-    batches: Iterable[Arrow],
-    converter: Callable[[Arrow], Generator[Any, None, None]],
-    sink: BigQuerySink,
-) -> None:
-    append_batch([convert_batch(batch, converter) for batch in batches], sink)
+def sink_fun(
+    project_id: str,
+    dataset: str,
+    table: str,
+    descriptor: descriptor_pb2.DescriptorProto,
+) -> Callable[[], BigQuerySink]:
+    def sink() -> BigQuerySink:
+        return BigQuerySink(project_id, dataset, table, descriptor)
 
-
-def split_into_batches(
-    iterable: Iterable[pa.RecordBatch], size: int
-) -> Generator[Tuple[int, Any], None, None]:
-    counter = 0
-    it = iter(iterable)
-    item = list(itertools.islice(it, size))
-    while item:
-        yield counter, item
-        item = list(itertools.islice(it, size))
-        counter += 1
-
-
-def process_table(
-    table: pyarrow.Table,
-    num_partitions: int,
-    converter: Callable[[Arrow], Generator[Any, None, None]],
-    sink_factory: Callable[[], BigQuerySink],
-    *,
-    max_chunk_size: int = 10_000,
-) -> Tuple[int, int]:
-    bq_sinks = [sink_factory() for _ in range(0, num_partitions)]
-    batches = table.to_batches(max_chunksize=max_chunk_size)
-
-    with ThreadPoolExecutor(num_partitions) as executor:
-        futures = [
-            executor.submit(
-                send_batch, batch, converter, bq_sinks[index % num_partitions]
-            )
-            for (index, batch) in split_into_batches(batches, 5)
-        ]
-
-        for future in concurrent.futures.as_completed(futures):
-            if not future.exception():
-                continue
-            raise future.exception()  # type: ignore
-
-    for sink in bq_sinks:
-        if sink.stream_name:
-            sink.finalize_write_stream()
-            sink.commit()
-
-    return num_partitions, table.num_rows
+    return sink
 
 
 class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
@@ -445,8 +466,6 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
             ns, _ = parser.parse_known_args(args)
         return vars(ns)
 
-    # TODO: validate required table arguments based on patterns
-
     def run(self, spark: SparkSession, args: Dict[str, Any]) -> None:
         sc = spark.sparkContext
         if args[c.DEBUG]:
@@ -467,13 +486,8 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
         db_name = args[c.NEO4J_DB_NAME]
 
         # 2. Fetch our secret if any
-        if c.NEO4J_SECRET in args:
-            logger.info(f"fetching secret {args[c.NEO4J_SECRET]}")
-            secret = util.fetch_secret(args[c.NEO4J_SECRET])
-            if not secret:
-                logger.warning("failed to fetch secret, falling back to params")
-            else:
-                args.update(secret)
+        if args[c.NEO4J_SECRET]:
+            apply_secrets(args, args[c.DEBUG], logger)
 
         # 3. Initialize our clients for source and sink.
         client = build_arrow_client(
@@ -495,53 +509,49 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
         logger.info(f"using {num_partitions:,} streams")
         start_time = time.time()
 
-        num_streams, num_rows = 0, 0
-        if any(filter(pattern_parser.Pattern.is_node, patterns)):
-            # Handle nodes
-            nodes_data = [
-                read_by_pattern(client, pattern)
-                for pattern in filter(pattern_parser.Pattern.is_node, patterns)
-            ]
-            nodes_tb = concat_tables(nodes_data)
-            p_streams, p_rows = process_table(
-                nodes_tb,
-                num_partitions,
-                arrow_to_nodes,
-                lambda: BigQuerySink(
-                    args[c.BQ_PROJECT],
-                    args[c.BQ_DATASET],
-                    args[c.BQ_NODE_TABLE],
-                    Node.DESCRIPTOR,
-                    logger=logger,
-                ),
-                max_chunk_size=client.max_chunk_size,
+        def process_patterns(
+            filter_fun: Callable[[typing.Any], bool],
+            converter: Callable[[Arrow], Generator[Any, None, None]],
+            sink_factory: Callable[[], BigQuerySink],
+        ) -> Tuple[int, int]:
+            results: List[Tuple[str, int]] = (
+                sc.parallelize([p for p in filter(filter_fun, patterns)])
+                .flatMap(read_by_pattern_fun(client))
+                .repartition(num_partitions)
+                .map(convert_batch_fun(converter))
+                .mapPartitions(append_batch_fun(sink_factory))
+                .collect()
             )
-            num_streams += p_streams
-            num_rows += p_rows
 
-        if any(filter(pattern_parser.Pattern.is_edge, patterns)):
-            # Handle edges
-            edges_data = [
-                read_by_pattern(client, pattern)
-                for pattern in filter(pattern_parser.Pattern.is_edge, patterns)
-            ]
-            edges_tb = concat_tables(edges_data)
-            p_streams, p_rows = process_table(
-                edges_tb,
-                num_partitions,
-                arrow_to_edges,
-                lambda: BigQuerySink(
-                    args[c.BQ_PROJECT],
-                    args[c.BQ_DATASET],
-                    args[c.BQ_EDGE_TABLE],
-                    Edge.DESCRIPTOR,
-                    logger=logger,
-                ),
-                max_chunk_size=client.max_chunk_size,
-            )
-            num_streams += p_streams
-            num_rows += p_rows
+            return len(results), sum([r[1] for r in results])
 
+        node_descriptor = descriptor_pb2.DescriptorProto()
+        Node.DESCRIPTOR.CopyToProto(node_descriptor)
+        node_streams, node_rows = process_patterns(
+            pattern_parser.Pattern.is_node,
+            arrow_to_nodes,
+            sink_fun(
+                args[c.BQ_PROJECT],
+                args[c.BQ_DATASET],
+                args[c.BQ_NODE_TABLE],
+                node_descriptor,
+            ),
+        )
+
+        edge_descriptor = descriptor_pb2.DescriptorProto()
+        Edge.DESCRIPTOR.CopyToProto(edge_descriptor)
+        edge_streams, edge_rows = process_patterns(
+            pattern_parser.Pattern.is_edge,
+            arrow_to_edges,
+            sink_fun(
+                args[c.BQ_PROJECT],
+                args[c.BQ_DATASET],
+                args[c.BQ_EDGE_TABLE],
+                edge_descriptor,
+            ),
+        )
+
+        num_streams, num_rows = node_streams + edge_streams, node_rows + edge_rows
         duration = time.time() - start_time
         logger.info(
             f"sent {num_rows:,} rows to BigQuery using {num_streams:,} "
@@ -552,8 +562,8 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
         log_4j_logger = (
             spark.sparkContext._jvm.org.apache.log4j  # type: ignore
         )  # pylint: disable=protected-access
-        return logging.Logger(
-            log_4j_logger.LogManager.getLogger(self.__class__.__name__)
+        return cast(
+            logging.Logger, log_4j_logger.LogManager.getLogger(self.__class__.__name__)
         )
 
 
@@ -700,7 +710,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
         graph = load_graph(args)
         logger.info(f"using graph ${graph.to_json()}")
 
-        if c.NEO4J_SECRET in args:
+        if args[c.NEO4J_SECRET]:
             apply_secrets(args, debug, logger)
 
         # 2b. Initialize our clients for source and sink.
@@ -803,51 +813,6 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
         log_4j_logger = (
             spark.sparkContext._jvm.org.apache.log4j  # type: ignore
         )  # pylint: disable=protected-access
-        return logging.Logger(
-            log_4j_logger.LogManager.getLogger(self.__class__.__name__)
+        return cast(
+            logging.Logger, log_4j_logger.LogManager.getLogger(self.__class__.__name__)
         )
-
-
-def load_graph(args: Dict[str, Any]) -> na.model.Graph:
-    # 1. Load the Graph Model.
-    if args[c.NEO4J_GRAPH_JSON]:
-        # Try loading a literal JSON-based model
-        json_str = args[c.NEO4J_GRAPH_JSON]
-        graph = na.model.Graph.from_json(json_str)
-    elif args[c.NEO4J_GRAPH_JSON_URI]:
-        # Fall back to URI
-        uri = args[c.NEO4J_GRAPH_JSON_URI]
-        graph = load_model_from_gcs(uri)
-        if not graph:
-            raise ValueError(f"failed to load graph from {uri}")
-    else:
-        # Give up :(
-        raise ValueError("missing graph data model uri or literal JSON")
-
-    # 1b. Override graph and/or database name.
-    if c.NEO4J_GRAPH_NAME in args:
-        graph = graph.named(args[c.NEO4J_GRAPH_NAME])
-    if c.NEO4J_DB_NAME in args:
-        graph = graph.in_db(args[c.NEO4J_DB_NAME])
-
-    graph.validate()
-
-    return graph
-
-
-def apply_secrets(args: Dict[str, Any], debug: bool, logger: logging.Logger) -> None:
-    # 2a. Fetch our secret if any
-    logger.info(f"fetching secret {args[c.NEO4J_SECRET]}")
-    secret = util.fetch_secret(args[c.NEO4J_SECRET])
-    if debug:
-        redacted_copy = {}
-        for key in secret:
-            value = secret[key]
-            if key == c.NEO4J_PASSWORD:
-                value = "<redacted>"
-            redacted_copy[key] = value
-        logger.debug(f"fetched secret with values {redacted_copy}")
-    if not secret:
-        logger.warning("failed to fetch secret, falling back to params")
-    else:
-        args.update(secret)

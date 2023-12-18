@@ -24,7 +24,6 @@ from .constants import USER_AGENT
 from typing import (
     cast,
     Any,
-    Callable,
     Dict,
     Generator,
     List,
@@ -89,13 +88,16 @@ class BigQuerySource:
         )
         return source
 
+    def new_client(self) -> BigQueryReadClient:
+        return BigQueryReadClient(client_info=self.client_info)
+
     def table(self, table: str, *, fields: List[str] = []) -> List[BQStream]:
         """
         Get one or many streams for a given BigQuery table, returning a Tuple
         of the table name and the list of its streams.
         """
         if self.client is None:
-            self.client = BigQueryReadClient(client_info=self.client_info)
+            self.client = self.new_client()
 
         read_session = ReadSession(
             table=f"{self.basepath}/tables/{table}", data_format=self.data_format
@@ -117,7 +119,7 @@ class BigQuerySource:
         """
         table_name, stream_name = bq_stream
         if getattr(self, "client", None) is None:
-            self.client = BigQueryReadClient(client_info=self.client_info)
+            self.client = self.new_client()
 
         rows_stream = cast(BigQueryReadClient, self.client).read_rows(stream_name)
 
@@ -152,7 +154,7 @@ class BigQuerySink:
         project_id: str,
         dataset: str,
         table: str,
-        descriptor: Any,
+        descriptor: descriptor_pb2.DescriptorProto,
         *,
         logger: Optional[logging.Logger] = None,
     ):
@@ -162,24 +164,27 @@ class BigQuerySink:
         self.parent = BigQueryWriteClient.table_path(project_id, dataset, table)
 
         # state tracking
-        self.futures: List[Future] = []
         self.offset: int = 0
         self.stream: Optional[Any] = None
         self.stream_name: Optional[str] = None
-        self.callback: Optional[Any] = None  # TODO: callback fn
 
         if not logger:
             logger = logging.getLogger("BigQuerySink")
         self.logger = logger
 
-        ser_proto_data = descriptor_pb2.DescriptorProto()
-        descriptor.CopyToProto(ser_proto_data)
-        self.serialized_proto_data: bytes = ser_proto_data.SerializeToString()
+        self.serialized_proto_data: bytes = descriptor.SerializeToString()
 
-        self.proto_data: Optional[Any] = None  # TODO: typing
+        self.proto_data: Optional[Any] = None
 
     def __str__(self) -> str:
         return f"BigQuerySink({self.parent})"
+
+    def __getstate__(self) -> Dict[str, Any]:
+        state = self.__dict__.copy()
+        # Remove the FlightClient and CallOpts as they're not serializable
+        if "logger" in state:
+            del state["logger"]
+        return state
 
     def _latent_init(self) -> None:
         """
@@ -193,11 +198,16 @@ class BigQuerySink:
         self.proto_data = types.AppendRowsRequest.ProtoData()
         self.proto_data.writer_schema = proto_schema
 
+        self.logger = logging.getLogger("BigQuerySink")
+
     @staticmethod
     def print_completion(f: Future) -> None:
         """Print the future to stdout."""
         logger = logging.getLogger("BigQuerySink")
         logger.info(f"completed {f}")
+
+    def new_client(self) -> BigQueryWriteClient:
+        return BigQueryWriteClient(client_info=self.client_info)
 
     def append_rows(self, rows: List[bytes]) -> Tuple[str, int]:
         """
@@ -208,7 +218,7 @@ class BigQuerySink:
         """
         if self.client is None:
             # Latent client creation to support serialization.
-            self.client = BigQueryWriteClient(client_info=self.client_info)
+            self.client = self.new_client()
             self._latent_init()
 
         if self.stream is None:
@@ -218,18 +228,20 @@ class BigQuerySink:
             #
             write_stream_type = types.WriteStream()
             write_stream_type.type_ = cast(
-                types.WriteStream.Type, types.WriteStream.Type.COMMITTED  # XXX
+                types.WriteStream.Type, types.WriteStream.Type.PENDING  # XXX
             )
             write_stream = self.client.create_write_stream(
                 parent=self.parent,
                 write_stream=write_stream_type,
             )
             self.stream_name = write_stream.name
+
             req_template = types.AppendRowsRequest()
             req_template.write_stream = self.stream_name
             if self.proto_data is None:
                 raise RuntimeError("missing self.proto_data")
             req_template.proto_rows = self.proto_data
+
             self.stream = writer.AppendRowsStream(self.client, req_template)
             self.logger.info(f"created write stream {self.stream_name}")
 
@@ -247,13 +259,11 @@ class BigQuerySink:
         request.proto_rows = proto_data
 
         future = self.stream.send(request)
-        if self.callback:
-            future.add_done_callback(self.callback)
-        self.futures.append(future)
+        future.result(timeout=None)
         self.offset += len(rows)
         return cast(str, self.stream_name), len(rows)  # XXX ignoring offset for now
 
-    def finalize_write_stream(self, stream: str = "") -> Tuple[str, int]:
+    def finalize_write_stream(self) -> Tuple[str, int]:
         """
         Finalize any pending write stream. If no client or stream, this is a
         no-op and just warns.
@@ -261,43 +271,30 @@ class BigQuerySink:
         Returns the stream name finalized and the final offset.
         """
         if self.client is None:
-            self.client = BigQueryWriteClient(client_info=self.client_info)
+            self.client = self.new_client()
             self._latent_init()
 
-        if stream:
-            self.client.finalize_write_stream(name=stream)
-        elif self.stream_name:
-            self.wait_for_completion(5 * 60)  # XXX 5 mins... yolo!
+        if self.stream_name:
             self.client.finalize_write_stream(name=self.stream_name)
         else:
             raise RuntimeError("no valid stream name")
+
         return self.stream_name, self.offset  # type: ignore # should be non-None at this point
 
-    def commit(self, streams: List[str] = []) -> None:
+    def commit(self) -> None:
         """
         Commit pending write streams. If no streams are provided, uses the
         existing stream named by self.stream_name.
         """
         if self.client is None:
-            self.client = BigQueryWriteClient(client_info=self.client_info)
+            self.client = self.new_client()
             self._latent_init()
 
         commit_req = types.BatchCommitWriteStreamsRequest()
         commit_req.parent = self.parent
-        if streams:
-            commit_req.write_streams = streams
-        elif self.stream_name:
+        if self.stream_name:
             commit_req.write_streams = [self.stream_name]
         else:
             raise RuntimeError("no valid stream name(s)")
-        self.client.batch_commit_write_streams(commit_req)
 
-    def wait_for_completion(self, timeout_secs: int) -> None:
-        """
-        Await completion of any outstanding futures.
-        """
-        for future in self.futures:
-            try:
-                future.result(timeout=timeout_secs)
-            except Exception:
-                pass
+        self.client.batch_commit_write_streams(commit_req)

@@ -12,7 +12,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: 'read'
+      id-token: 'write'
     steps:
       - uses: actions/checkout@v3
       - name: set up python
@@ -28,7 +30,20 @@ jobs:
         run: echo "${POETRY_HOME}/bin" >> $GITHUB_PATH
       - name: install dependencies and build
         run: poetry install
-      - name: run tests
-        run: poetry run pytest
+      - name: run unit tests
+        run: poetry run pytest tests/unit
+      - uses: 'google-github-actions/auth@v2'
+        with:
+          project_id: ${{ vars.GCP_PROJECT }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          create_credentials_file: true
+          export_environment_variables: true
+      - name: run integration tests
+        env:
+          gds_license: ${{ secrets.GDS_LICENSE }}
+        run: |
+          LICENSE_FILE=${{ runner.temp }}/license.tmp
+          echo "${gds_license}" > $LICENSE_FILE
+          GDS_LICENSE_FILE=$LICENSE_FILE poetry run pytest tests/integration
       - name: build image
         run: docker build . --platform linux/amd64 --file Dockerfile --tag neo4j-bigquery-connector:$(date +%s)

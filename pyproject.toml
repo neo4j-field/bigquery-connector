@@ -13,9 +13,9 @@ google-cloud-bigquery-storage = { extras = ["pyarrow"], version = "^2.22.0" }
 google-cloud-secret-manager = "^2.16.4"
 antlr4-python3-runtime = "^4.13.1"
 fsspec = { extras = ["gcs"], version = "^2023.10.0" }
-neo4j-arrow = { git = "https://github.com/neo4j-field/neo4j_arrow.git", rev = "main" }
 neo4j = ">=5"
 importlib-metadata = "^6.8.0"
+neo4j-arrow = {git = "https://github.com/neo4j-field/neo4j_arrow.git", rev = "0.6.1"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
@@ -33,6 +33,8 @@ flake8-spellcheck = "^0.28.0"
 flake8-comprehensions = "^3.14.0"
 flake8-bandit = "^4.1.1"
 types-protobuf = "^4.24.0.4"
+testcontainers = "^3.7.1"
+pandas = "^2.1.4"
 
 [build-system]
 requires = ["poetry-core"]
