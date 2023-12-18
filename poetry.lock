@@ -1468,7 +1468,7 @@ pyarrow = ["pyarrow (>=1.0.0)"]
 
 [[package]]
 name = "neo4j-arrow"
-version = "0.6.0"
+version = "0.6.1"
 description = "Neo4j Arrow Client Library"
 optional = false
 python-versions = ">=3.9, <4"
@@ -1481,8 +1481,8 @@ pyarrow = ">=10, <15"
 [package.source]
 type = "git"
 url = "https://github.com/neo4j-field/neo4j_arrow.git"
-reference = "main"
-resolved_reference = "2cd465cfb4fb661ff91c27ce316399d2039d45df"
+reference = "0.6.1"
+resolved_reference = "4c42be2a1ec77cebc526ebbfaa50e1054b7c1740"
 
 [[package]]
 name = "nodeenv"
@@ -2493,4 +2493,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9, <4"
-content-hash = "fbfbcedbbaabefacd8c61b4b2416575b8101042e262edab930da91a588b033f9"
+content-hash = "75acc319c6326140425005ef67ccc276141cc0145edcbfbe11bba2afe9893ba4"
