@@ -37,6 +37,11 @@ jobs:
           project_id: ${{ vars.GCP_PROJECT }}
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       - name: run integration tests
-        run: poetry run pytest tests/integration
+        env:
+          gds_license: ${{ secrets.GDS_LICENSE }}
+        run: |
+          LICENSE_FILE=${{ runner.temp }}/license.tmp
+          echo "${gds_license}" > $LICENSE_FILE
+          GDS_LICENSE_FILE=$LICENSE_FILE poetry run pytest tests/integration
       - name: build image
         run: docker build . --platform linux/amd64 --file Dockerfile --tag neo4j-bigquery-connector:$(date +%s)
