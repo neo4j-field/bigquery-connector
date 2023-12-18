@@ -20,7 +20,7 @@ jobs:
         uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Log in to the Github Container Registry
         uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc
