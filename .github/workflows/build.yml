@@ -28,7 +28,13 @@ jobs:
         run: echo "${POETRY_HOME}/bin" >> $GITHUB_PATH
       - name: install dependencies and build
         run: poetry install
-      - name: run tests
-        run: poetry run pytest
+      - name: run unit tests
+        run: poetry run pytest tests/unit
+      - uses: 'google-github-actions/auth@v2'
+        with:
+          project_id: ${{ vars.GCP_PROJECT }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      - name: run integration tests
+        run: poetry run pytest tests/integration
       - name: build image
         run: docker build . --platform linux/amd64 --file Dockerfile --tag neo4j-bigquery-connector:$(date +%s)

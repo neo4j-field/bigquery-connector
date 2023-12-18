@@ -24,7 +24,6 @@ from .constants import USER_AGENT
 from typing import (
     cast,
     Any,
-    Callable,
     Dict,
     Generator,
     List,
@@ -89,13 +88,16 @@ class BigQuerySource:
         )
         return source
 
+    def new_client(self) -> BigQueryReadClient:
+        return BigQueryReadClient(client_info=self.client_info)
+
     def table(self, table: str, *, fields: List[str] = []) -> List[BQStream]:
         """
         Get one or many streams for a given BigQuery table, returning a Tuple
         of the table name and the list of its streams.
         """
         if self.client is None:
-            self.client = BigQueryReadClient(client_info=self.client_info)
+            self.client = self.new_client()
 
         read_session = ReadSession(
             table=f"{self.basepath}/tables/{table}", data_format=self.data_format
@@ -117,7 +119,7 @@ class BigQuerySource:
         """
         table_name, stream_name = bq_stream
         if getattr(self, "client", None) is None:
-            self.client = BigQueryReadClient(client_info=self.client_info)
+            self.client = self.new_client()
 
         rows_stream = cast(BigQueryReadClient, self.client).read_rows(stream_name)
 
@@ -204,6 +206,9 @@ class BigQuerySink:
         logger = logging.getLogger("BigQuerySink")
         logger.info(f"completed {f}")
 
+    def new_client(self) -> BigQueryWriteClient:
+        return BigQueryWriteClient(client_info=self.client_info)
+
     def append_rows(self, rows: List[bytes]) -> Tuple[str, int]:
         """
         Submit a series of BigQuery rows (already serialized ProtoBufs),
@@ -213,7 +218,7 @@ class BigQuerySink:
         """
         if self.client is None:
             # Latent client creation to support serialization.
-            self.client = BigQueryWriteClient(client_info=self.client_info)
+            self.client = self.new_client()
             self._latent_init()
 
         if self.stream is None:
@@ -266,7 +271,7 @@ class BigQuerySink:
         Returns the stream name finalized and the final offset.
         """
         if self.client is None:
-            self.client = BigQueryWriteClient(client_info=self.client_info)
+            self.client = self.new_client()
             self._latent_init()
 
         if self.stream_name:
@@ -282,7 +287,7 @@ class BigQuerySink:
         existing stream named by self.stream_name.
         """
         if self.client is None:
-            self.client = BigQueryWriteClient(client_info=self.client_info)
+            self.client = self.new_client()
             self._latent_init()
 
         commit_req = types.BatchCommitWriteStreamsRequest()

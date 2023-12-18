@@ -1,0 +1,51 @@
+{
+  "name": "graph",
+  "db": "",
+  "nodes": [
+    {
+      "source": "users",
+      "label": "",
+      "label_field": "label",
+      "key_field": "node_id",
+      "properties": {
+        "id": "real_id"
+      }
+    },
+    {
+      "source": "questions",
+      "label": "",
+      "label_field": "label",
+      "key_field": "node_id",
+      "properties": {
+        "id": "real_id"
+      }
+    },
+    {
+      "source": "answers",
+      "label": "",
+      "label_field": "label",
+      "key_field": "node_id",
+      "properties": {
+        "id": "real_id"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "questions",
+      "type": "",
+      "type_field": "asked_by_type",
+      "source_field": "node_id",
+      "target_field": "user_node_id",
+      "properties": {}
+    },
+    {
+      "source": "answers",
+      "type": "",
+      "type_field": "answer_for_type",
+      "source_field": "node_id",
+      "target_field": "question_node_id",
+      "properties": {}
+    }
+  ]
+}

@@ -486,7 +486,7 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
         db_name = args[c.NEO4J_DB_NAME]
 
         # 2. Fetch our secret if any
-        if c.NEO4J_SECRET in args:
+        if args[c.NEO4J_SECRET]:
             apply_secrets(args, args[c.DEBUG], logger)
 
         # 3. Initialize our clients for source and sink.
@@ -710,7 +710,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
         graph = load_graph(args)
         logger.info(f"using graph ${graph.to_json()}")
 
-        if c.NEO4J_SECRET in args:
+        if args[c.NEO4J_SECRET]:
             apply_secrets(args, debug, logger)
 
         # 2b. Initialize our clients for source and sink.
