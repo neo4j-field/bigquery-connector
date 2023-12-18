@@ -36,6 +36,8 @@ jobs:
         with:
           project_id: ${{ vars.GCP_PROJECT }}
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          create_credentials_file: true
+          export_environment_variables: true
       - name: run integration tests
         env:
           gds_license: ${{ secrets.GDS_LICENSE }}
