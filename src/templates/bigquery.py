@@ -49,7 +49,6 @@ class ProgressTracker:
         self.progress = 0
     
     def callback(self, progress: int)->  None:
-        print(f"Progress: {progress}")
         self.progress = progress
 
 def load_model_from_gcs(uri: str) -> Optional[Graph]:
@@ -79,20 +78,13 @@ def flatten(
 
     return [x for y in map(fn, lists) for x in y]
 
-
-def send_nodes(
-    client: GdsArrowClient,
-    model: Optional[Graph] = None,
-) -> Callable[[DataStream], int]:
-    """
-    Wrap the given client, model, and (optional) source_field in a function that
-    streams PyArrow data (Table or RecordBatch) to Neo4j as nodes.
-    """
-    source_field = "_table"
-    
-    def map_tables(table: DataStream) -> list[Table | Iterable[RecordBatch]]:
-        mapper = node_mapper(model, source_field)
-
+def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], Table | Iterable[RecordBatch]]:
+    def _map_arrow_tables(table: DataStream) -> Table | Iterable[RecordBatch]:
+        source_field = "_table"
+        if entity_type == "NODE":
+            mapper = node_mapper(model, source_field)
+        else:
+            mapper = edge_mapper(model, source_field)
         # Initial type is a generator
         table = next(table, None)
 
@@ -104,13 +96,24 @@ def send_nodes(
 
         if isinstance(table, RecordBatch):
             table = [table]
-        
+
         return table
 
-    def _send_nodes_gds(table: DataStream) -> int:
+    return _map_arrow_tables
+
+
+def send_nodes(
+    client: GdsArrowClient,
+    model: Optional[Graph] = None,
+) -> Callable[[Table | Iterable[RecordBatch]], int]:
+    """
+    Wrap the given client, model, and (optional) source_field in a function that
+    streams PyArrow data (Table or RecordBatch) to Neo4j as nodes.
+    """
+
+    def _send_nodes_gds(table: Table | Iterable[RecordBatch]) -> int:
         nodes_progress = ProgressTracker()
 
-        table = map_tables(table)
         client.upload_nodes(model.name, table, progress_callback=nodes_progress.callback)
         return nodes_progress.progress
         
@@ -120,34 +123,14 @@ def send_nodes(
 def send_edges(
     client: GdsArrowClient,
     model: Optional[Graph] = None,
-) -> Callable[[DataStream], int]:
+) -> Callable[[list[Table | Iterable[RecordBatch]]], int]:
     """
     Wrap the given client, model, and (optional) source_field in a function that
     streams PyArrow data (Table or RecordBatch) to Neo4j as relationships.
     """
-    source_field = "_table"
-
-    def map_tables(table: DataStream) -> list[Table | Iterable[RecordBatch]]:
-        mapper = edge_mapper(model, source_field)
-        
-        # Initial type is a generator
-        table = next(table, None)
-
-        if not table:
-            raise Exception("empty iterable of record batches provided")
-        
-        # Map nodes
-        table = mapper(table)
-
-        if isinstance(table, RecordBatch):
-            table = [table]
-        
-        return table
-    
-    def _send_edges_gds(table: DataStream) -> int:
+    def _send_edges_gds(table: list[Table | Iterable[RecordBatch]]) -> int:
         edge_progress = ProgressTracker()
 
-        table = map_tables(table)
         client.upload_relationships(model.name, table, progress_callback=edge_progress.callback)
         return edge_progress.progress
 
@@ -448,6 +431,7 @@ def build_gds_arrow_client(
             neo4j_uri, auth=neo4j.basic_auth(neo4j_username, neo4j_password)
     ) as driver:
         try:
+            # deprecated
             record: Optional[neo4j.Record] = driver.execute_query(
                 "CALL gds.debug.arrow()", result_transformer_=neo4j.Result.single
             )
@@ -899,10 +883,11 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
         nodes_start = time.time()
 
         nodes_count = (sc.parallelize(node_streams, num_partitions)
-               .map(bq.consume_stream, True)
-               .map(send_nodes(client, graph))
-               .reduce(add)
-               )
+                       .map(bq.consume_stream, True)
+                       .map(map_tables(graph, "NODE"))
+                       .map(send_nodes(client, graph))
+                       .sum()
+                       )
          
         logger.info(
             f"streamed {nodes_count} nodes"
@@ -929,8 +914,9 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
         edges_count = (
             sc.parallelize(edge_streams, num_partitions)
             .map(bq.consume_stream, True)  # don't shuffle
+            .map(map_tables(graph, "EDGE"))
             .map(send_edges(client, graph))
-            .reduce(add)
+            .sum()
         )
 
         logger.info(
