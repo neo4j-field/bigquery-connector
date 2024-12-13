@@ -87,6 +87,7 @@ def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], Table |
             mapper = edge_mapper(model, source_field)
         # Initial type is a generator
         table = next(table, None)
+        # todo map all tables in list. flatmap. Currently only one element in all streams for testing purposes
 
         if not table:
             raise Exception("empty iterable of record batches provided")
