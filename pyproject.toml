@@ -37,6 +37,7 @@ flake8-bandit = "^4.1.1"
 types-protobuf = "^4.24.0.4"
 testcontainers = "^3.7.1"
 pandas = "^2.1.4"
+pytest-flakefinder = "^1.1.0"
 
 [build-system]
 requires = ["poetry-core"]
