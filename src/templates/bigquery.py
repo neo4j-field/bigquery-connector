@@ -33,7 +33,7 @@ import pattern_parser
 from model import Edge, Node, arrow_to_nodes, arrow_to_edges
 from . import constants as c, util
 from .bq_client import BigQuerySource, BigQuerySink, BQStream
-from .mapper import node_mapper, edge_mapper
+from .mapper import node_mapper, edge_mapper, MappingFn
 from .model import Graph
 __all__ = [
     "BigQueryToNeo4jGDSTemplate",
@@ -77,27 +77,25 @@ def flatten(
 
     return [x for y in map(fn, lists) for x in y]
 
-def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], Table | Iterable[RecordBatch]]:
-    def _map_arrow_tables(table: DataStream) -> Table | Iterable[RecordBatch]:
+def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], list[Table | Iterable[RecordBatch]]]:
+
+    def map_entity(table: Arrow, mapper: MappingFn):
+        if not table:
+            raise Exception("empty iterable of record batches provided")
+        mapped_table = mapper(table)
+        if isinstance(table, RecordBatch):
+            mapped_table = [mapped_table]
+        return mapped_table
+
+    def _map_arrow_tables(table: DataStream) -> list[Table | Iterable[RecordBatch]]:
         source_field = "_table"
         if entity_type == "NODE":
             mapper = node_mapper(model, source_field)
         else:
             mapper = edge_mapper(model, source_field)
-        # Initial type is a generator
-        table = next(table, None)
-        # todo map all tables in list. flatmap. Currently only one element in all streams for testing purposes
 
-        if not table:
-            raise Exception("empty iterable of record batches provided")
-
-        # Map nodes
-        table = mapper(table)
-
-        if isinstance(table, RecordBatch):
-            table = [table]
-
-        return table
+        mapped_tables = [map_entity(t, mapper) for t in table]
+        return mapped_tables
 
     return _map_arrow_tables
 
@@ -792,7 +790,8 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
 
         nodes_count = (sc.parallelize(node_streams, num_partitions)
                        .map(bq.consume_stream, True)
-                       .map(map_tables(graph, "NODE"))
+                       .flatMap(map_tables(graph, "NODE"))
+                       .repartition(num_partitions)
                        .map(send_nodes(client, graph))
                        .sum()
                        )
@@ -822,7 +821,8 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
         edges_count = (
             sc.parallelize(edge_streams, num_partitions)
             .map(bq.consume_stream, True)  # don't shuffle
-            .map(map_tables(graph, "EDGE"))
+            .flatMap(map_tables(graph, "EDGE"))
+            .repartition(num_partitions)
             .map(send_edges(client, graph))
             .sum()
         )
