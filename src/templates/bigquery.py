@@ -42,6 +42,7 @@ __all__ = [
 ]
 
 Arrow = Union[pa.Table, pa.RecordBatch]
+ArrowData = Union[pa.Table,  Iterable[pa.RecordBatch]]
 DataStream = Generator[Arrow, None, None]
 
 
@@ -80,7 +81,7 @@ def flatten(
     return [x for y in map(fn, lists) for x in y]
 
 
-def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], list[Table | Iterable[RecordBatch]]]:
+def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], List[ArrowData]]:
     def map_entity(table: Arrow, mapper: MappingFn):
         if not table:
             raise Exception("empty iterable of record batches provided")
@@ -89,7 +90,7 @@ def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], list[Ta
             mapped_table = [mapped_table]
         return mapped_table
 
-    def _map_arrow_tables(table: DataStream) -> list[Table | Iterable[RecordBatch]]:
+    def _map_arrow_tables(table: DataStream) -> List[ArrowData]:
         source_field = "_table"
         if entity_type == "NODE":
             mapper = node_mapper(model, source_field)
@@ -105,13 +106,13 @@ def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], list[Ta
 def send_nodes(
         client: GdsArrowClient,
         model: Optional[Graph] = None,
-) -> Callable[[Table | Iterable[RecordBatch]], int]:
+) -> Callable[[ArrowData], int]:
     """
     Wrap the given client, model, and (optional) source_field in a function that
     streams PyArrow data (Table or RecordBatch) to Neo4j as nodes.
     """
 
-    def _send_nodes_gds(table: Table | Iterable[RecordBatch]) -> int:
+    def _send_nodes_gds(table: ArrowData) -> int:
         nodes_progress = ProgressTracker()
 
         client.upload_nodes(model.name, table, progress_callback=nodes_progress.callback)
@@ -123,13 +124,13 @@ def send_nodes(
 def send_edges(
         client: GdsArrowClient,
         model: Optional[Graph] = None,
-) -> Callable[[list[Table | Iterable[RecordBatch]]], int]:
+) -> Callable[[ArrowData], int]:
     """
     Wrap the given client, model, and (optional) source_field in a function that
     streams PyArrow data (Table or RecordBatch) to Neo4j as relationships.
     """
 
-    def _send_edges_gds(table: list[Table | Iterable[RecordBatch]]) -> int:
+    def _send_edges_gds(table: ArrowData) -> int:
         edge_progress = ProgressTracker()
 
         client.upload_relationships(model.name, table, progress_callback=edge_progress.callback)
