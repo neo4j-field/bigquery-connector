@@ -37,7 +37,7 @@ def node_mapper(model: Graph, source_field: Optional[str] = None) -> MappingFn:
     return _map
 
 
-def edge_mapper( model: Graph, source_field: Optional[str] = None) -> MappingFn:
+def edge_mapper(model: Graph, source_field: Optional[str] = None) -> MappingFn:
     """
     Generate a mapping function for an Edge.
     """
@@ -69,10 +69,11 @@ def edge_mapper( model: Graph, source_field: Optional[str] = None) -> MappingFn:
 
 
 def nop_mapper(data: Arrow) -> Arrow:
-        """
-        Used as a no-op mapping function.
-        """
-        return data
+    """
+    Used as a no-op mapping function.
+    """
+    return data
+
 
 def _rename_and_add_column(
         columns: List[Union[pa.Array, pa.ChunkedArray]],

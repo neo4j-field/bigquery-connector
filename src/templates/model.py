@@ -31,14 +31,14 @@ class _GraphEncoder(JSONEncoder):
 
 class Node:
     def __init__(
-        self,
-        *,
-        source: str,
-        label: str = "",
-        label_field: str = "",
-        key_field: str,
-        properties: Optional[Dict[str, Any]] = None,
-        **kwargs: Any,
+            self,
+            *,
+            source: str,
+            label: str = "",
+            label_field: str = "",
+            key_field: str,
+            properties: Optional[Dict[str, Any]] = None,
+            **kwargs: Any,
     ):
         self._source = source
         self._label = label
@@ -102,16 +102,16 @@ class Node:
 
 class Edge:
     def __init__(
-        self,
-        *,
-        source: str,
-        edge_type: str = "",
-        type_field: str = "",
-        type: str = "",
-        source_field: str,
-        target_field: str,
-        properties: Optional[Dict[str, Any]] = None,
-        **kwargs: Any,
+            self,
+            *,
+            source: str,
+            edge_type: str = "",
+            type_field: str = "",
+            type: str = "",
+            source_field: str,
+            target_field: str,
+            properties: Optional[Dict[str, Any]] = None,
+            **kwargs: Any,
     ):
         self._source = source
         self._type = edge_type

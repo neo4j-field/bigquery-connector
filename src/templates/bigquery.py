@@ -35,6 +35,7 @@ from . import constants as c, util
 from .bq_client import BigQuerySource, BigQuerySink, BQStream
 from .mapper import node_mapper, edge_mapper, MappingFn
 from .model import Graph
+
 __all__ = [
     "BigQueryToNeo4jGDSTemplate",
     "Neo4jGDSToBigQueryTemplate",
@@ -43,12 +44,14 @@ __all__ = [
 Arrow = Union[pa.Table, pa.RecordBatch]
 DataStream = Generator[Arrow, None, None]
 
+
 class ProgressTracker:
     def __init__(self):
         self.progress = 0
-    
-    def callback(self, progress: int)->  None:
+
+    def callback(self, progress: int) -> None:
         self.progress = progress
+
 
 def load_model_from_gcs(uri: str) -> Optional[Graph]:
     """
@@ -64,21 +67,20 @@ def load_model_from_gcs(uri: str) -> Optional[Graph]:
 
 
 def flatten(
-    lists: List[List[Any]], fn: Optional[Callable[[Any], Any]] = None
+        lists: List[List[Any]], fn: Optional[Callable[[Any], Any]] = None
 ) -> List[Any]:
     """
     Flatten a list of lists, applying an optional function (fn) to the initial
     list of lists.
     """
     if not fn:
-
         def fn(x: Any) -> Any:
             return x
 
     return [x for y in map(fn, lists) for x in y]
 
-def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], list[Table | Iterable[RecordBatch]]]:
 
+def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], list[Table | Iterable[RecordBatch]]]:
     def map_entity(table: Arrow, mapper: MappingFn):
         if not table:
             raise Exception("empty iterable of record batches provided")
@@ -101,8 +103,8 @@ def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], list[Ta
 
 
 def send_nodes(
-    client: GdsArrowClient,
-    model: Optional[Graph] = None,
+        client: GdsArrowClient,
+        model: Optional[Graph] = None,
 ) -> Callable[[Table | Iterable[RecordBatch]], int]:
     """
     Wrap the given client, model, and (optional) source_field in a function that
@@ -114,18 +116,19 @@ def send_nodes(
 
         client.upload_nodes(model.name, table, progress_callback=nodes_progress.callback)
         return nodes_progress.progress
-        
+
     return _send_nodes_gds
 
 
 def send_edges(
-    client: GdsArrowClient,
-    model: Optional[Graph] = None,
+        client: GdsArrowClient,
+        model: Optional[Graph] = None,
 ) -> Callable[[list[Table | Iterable[RecordBatch]]], int]:
     """
     Wrap the given client, model, and (optional) source_field in a function that
     streams PyArrow data (Table or RecordBatch) to Neo4j as relationships.
     """
+
     def _send_edges_gds(table: list[Table | Iterable[RecordBatch]]) -> int:
         edge_progress = ProgressTracker()
 
@@ -143,7 +146,7 @@ def tuple_sum(a: Tuple[int, int], b: Tuple[int, int]) -> Tuple[int, int]:
 
 
 def node_to_stream_fn(
-    bq: BigQuerySource, graph: Graph
+        bq: BigQuerySource, graph: Graph
 ) -> Callable[[str], List[BQStream]]:
     """
     Create a function that generates BigQuery streams with optional field
@@ -166,7 +169,7 @@ def node_to_stream_fn(
 
 
 def edge_to_stream_fn(
-    bq: BigQuerySource, graph: Graph
+        bq: BigQuerySource, graph: Graph
 ) -> Callable[[str], List[BQStream]]:
     """
     Create a function that generates BigQuery streams with optional field
@@ -191,7 +194,7 @@ def edge_to_stream_fn(
 
 
 def convert_batch_fun(
-    converter: Callable[[Arrow], Generator[Any, None, None]]
+        converter: Callable[[Arrow], Generator[Any, None, None]]
 ) -> Callable[[Arrow], List[bytes]]:
     def _convert_batch(arrow: Arrow) -> List[bytes]:
         batch: List[bytes] = []
@@ -201,8 +204,9 @@ def convert_batch_fun(
 
     return _convert_batch
 
+
 def read_nodes(
-    client: GdsArrowClient, pattern: pattern_parser.NodePattern, graph_name: str, database: str
+        client: GdsArrowClient, pattern: pattern_parser.NodePattern, graph_name: str, database: str
 ) -> pa.RecordBatch:
     labels = pattern.label
     properties = pattern.properties
@@ -221,7 +225,7 @@ def read_nodes(
 
 
 def read_edges(
-    client: GdsArrowClient, pattern: pattern_parser.EdgePattern, graph_name: str, database: str
+        client: GdsArrowClient, pattern: pattern_parser.EdgePattern, graph_name: str, database: str
 ) -> pa.RecordBatch:
     properties = pattern.properties
 
@@ -247,9 +251,9 @@ def read_edges(
 
 
 def read_by_pattern_fun(
-    client: GdsArrowClient,
-    graph_name: str,
-    database: str,
+        client: GdsArrowClient,
+        graph_name: str,
+        database: str,
 ) -> Callable[[pattern_parser.Pattern], pa.RecordBatch]:
     def _read_by_pattern(pattern: pattern_parser.Pattern) -> pa.RecordBatch:
         if isinstance(pattern, pattern_parser.NodePattern):
@@ -374,7 +378,7 @@ def build_gds_arrow_client(
                     host=host,
                     port=int(port),
                     auth=(neo4j_username, neo4j_password)
-                )    
+                )
                 return gds_client
         except neo4j.exceptions.ClientError as e:
             if e.code != "Neo.ClientError.Procedure.ProcedureNotFound":
@@ -387,10 +391,10 @@ def build_gds_arrow_client(
 
 
 def sink_fun(
-    project_id: str,
-    dataset: str,
-    table: str,
-    descriptor: descriptor_pb2.DescriptorProto,
+        project_id: str,
+        dataset: str,
+        table: str,
+        descriptor: descriptor_pb2.DescriptorProto,
 ) -> Callable[[], BigQuerySink]:
     def sink() -> BigQuerySink:
         return BigQuerySink(project_id, dataset, table, descriptor)
@@ -540,9 +544,9 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
         start_time = time.time()
 
         def process_patterns(
-            filter_fun: Callable[[Any], bool],
-            converter: Callable[[Arrow], Generator[Any, None, None]],
-            sink_factory: Callable[[], BigQuerySink],
+                filter_fun: Callable[[Any], bool],
+                converter: Callable[[Arrow], Generator[Any, None, None]],
+                sink_factory: Callable[[], BigQuerySink],
         ) -> Tuple[int, int]:
             results: List[Tuple[str, int]] = (
                 sc.parallelize([p for p in filter(filter_fun, patterns)])
@@ -795,7 +799,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
                        .map(send_nodes(client, graph))
                        .sum()
                        )
-         
+
         logger.info(
             f"streamed {nodes_count} nodes"
         )
@@ -843,7 +847,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
             logger.warning(f"sent {edges_count} edges, but imported {total}!")
 
         # 9. TODO: await import completion and GDS projection available
-        
+
         duration = time.time() - start_time
         logger.info(f"completed in {duration:,.3f} seconds")
 
