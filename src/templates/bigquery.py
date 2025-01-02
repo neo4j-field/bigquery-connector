@@ -4,7 +4,6 @@ import argparse
 import logging
 import sys
 import time
-from operator import add
 from typing import (
     Any,
     Callable,
@@ -26,16 +25,16 @@ from dataproc_templates import BaseTemplate
 from google.protobuf import descriptor_pb2
 from graphdatascience.query_runner import gds_arrow_client
 from graphdatascience.query_runner.gds_arrow_client import GdsArrowClient
+from pandas import DataFrame
 from pyarrow import Table, RecordBatch
 from pyspark.sql import SparkSession
 
 import pattern_parser
-from model import Edge
+from model import Edge, Node, arrow_to_nodes, arrow_to_edges
 from . import constants as c, util
 from .bq_client import BigQuerySource, BigQuerySink, BQStream
 from .mapper import node_mapper, edge_mapper
 from .model import Graph
-
 __all__ = [
     "BigQueryToNeo4jGDSTemplate",
     "Neo4jGDSToBigQueryTemplate",
@@ -204,106 +203,85 @@ def convert_batch_fun(
 
     return _convert_batch
 
+def read_nodes(
+    client: GdsArrowClient, pattern: pattern_parser.NodePattern, graph_name: str, database: str
+) -> pa.RecordBatch:
+    labels = pattern.label
+    properties = pattern.properties
 
-class ProcedureNames:
-    nodes_single_property: str = "gds.graph.nodeProperty.stream"
-    nodes_multiple_property: str = "gds.graph.nodeProperties.stream"
-    edges_single_property: str = "gds.graph.relationshipProperty.stream"
-    edges_multiple_property: str = "gds.graph.relationshipProperties.stream"
-    edges_topology: str = "gds.graph.relationships.stream"
+    dataframe: DataFrame = client.get_node_properties(
+        graph_name,
+        database,
+        properties if properties is not None else [],
+        labels if labels is not None else ["*"],
+        True,
+    )
+    if 'labels' not in dataframe.columns:
+        dataframe['labels'] = pattern.label
+
+    return pa.RecordBatch.from_pandas(df=dataframe)
 
 
-def procedure_names(version: Optional[str] = None) -> ProcedureNames:
-    if not version:
-        return ProcedureNames()
-    elif version.startswith("2.5"):
-        return ProcedureNames()
+def read_edges(
+    client: GdsArrowClient, pattern: pattern_parser.EdgePattern, graph_name: str, database: str
+) -> pa.RecordBatch:
+    properties = pattern.properties
+
+    relationship_types = pattern.type if pattern.type is not None else ["*"]
+    if properties:
+        dataframe: DataFrame = client.get_relationship_properties(
+            graph_name,
+            database,
+            properties,
+            relationship_types,
+        )
     else:
-        names = ProcedureNames()
-        names.edges_topology = "gds.beta.graph.relationships.stream"
-        return names
+        dataframe: DataFrame = client.get_relationships(
+            graph_name,
+            database,
+            relationship_types,
+        )
+
+    if 'type' not in dataframe.columns:
+        dataframe['type'] = pattern.type
+
+    return pa.RecordBatch.from_pandas(df=dataframe)
 
 
-# def read_nodes(
-#     client: na.Neo4jArrowClient, pattern: pattern_parser.NodePattern
-# ) -> Iterable[pa.RecordBatch]:
-#     def _add_labels_column(batch: pa.RecordBatch, label: str) -> pa.RecordBatch:
-#         if not batch.field("labels"):
-#             labels_col = pa.array(
-#                 [[label]] * batch.num_rows, pa.large_list(pa.string())
-#             )
-#             new_schema = batch.schema.append(pa.field("labels", labels_col.type))
-#             return pa.RecordBatch.from_arrays(
-#                 batch.columns + [labels_col], schema=new_schema
-#             )
-# 
-#         return batch
-# 
-#     labels = pattern.label
-#     properties = pattern.properties
-#     config = {
-#         "configuration": {
-#             "node_labels": list(labels if labels is not None else ["*"]),
-#             "node_properties": list(properties if properties is not None else []),
-#             "list_node_labels": True,
-#         },
-#     }
-# 
-#     # nodes = client.get_property("db", "g", ProcedureNames().nodes_multiple_property, config)
-#     batches: Iterable[pa.RecordBatch] = client.read_nodes(
-#         pattern.properties, labels=[pattern.label]
-#     )
-#     return [_add_labels_column(batch, pattern.label) for batch in batches]
-# 
-# 
-# def read_edges(
-#     client: na.Neo4jArrowClient, pattern: pattern_parser.EdgePattern
-# ) -> Iterable[pa.RecordBatch]:
-#     def _add_type_column(
-#         batch: pa.RecordBatch, relationship_type: str
-#     ) -> pa.RecordBatch:
-#         type_col = pa.array([relationship_type] * batch.num_rows, pa.string())
-#         new_schema = batch.schema.append(pa.field("type", type_col.type))
-#         return pa.RecordBatch.from_arrays(batch.columns + [type_col], schema=new_schema)
-# 
-#     batches = client.read_edges(
-#         properties=pattern.properties, relationship_types=[pattern.type]
-#     )
-#     return [_add_type_column(batch, pattern.type) for batch in batches]
-# 
-# 
-# def read_by_pattern_fun(
-#     client: na.Neo4jArrowClient,
-# ) -> Callable[[pattern_parser.Pattern], Iterable[pa.RecordBatch]]:
-#     def _read_by_pattern(pattern: pattern_parser.Pattern) -> Iterable[pa.RecordBatch]:
-#         if isinstance(pattern, pattern_parser.NodePattern):
-#             return read_nodes(client, pattern)
-#         elif isinstance(pattern, pattern_parser.EdgePattern):
-#             return read_edges(client, pattern)
-#         else:
-#             raise ValueError(
-#                 f"expected an instance of Pattern, but got {pattern.__class__.__name__}"
-#             )
-# 
-#     return _read_by_pattern
-# 
-# 
-# def append_batch_fun(
-#         sink_factory: Callable[[], BigQuerySink],
-# ) -> Callable[[Iterable[List[bytes]]], Iterable[Tuple[str, int]]]:
-#     def append_batch(batches: Iterable[List[bytes]]) -> Iterable[Tuple[str, int]]:
-#         sink = sink_factory()
-#         cnt = 0
-#         for batch in batches:
-#             sink.append_rows(batch)
-#             cnt += len(batch)
-#         if cnt > 0:
-#             logging.info(f"appended {cnt:,} rows")
-#             sink.finalize_write_stream()
-#             sink.commit()
-#             yield cast(str, sink.stream_name), cnt
-# 
-#     return append_batch
+def read_by_pattern_fun(
+    client: GdsArrowClient,
+    graph_name: str,
+    database: str,
+) -> Callable[[pattern_parser.Pattern], pa.RecordBatch]:
+    def _read_by_pattern(pattern: pattern_parser.Pattern) -> pa.RecordBatch:
+        if isinstance(pattern, pattern_parser.NodePattern):
+            return read_nodes(client, pattern, graph_name, database)
+        elif isinstance(pattern, pattern_parser.EdgePattern):
+            return read_edges(client, pattern, graph_name, database)
+        else:
+            raise ValueError(
+                f"expected an instance of Pattern, but got {pattern.__class__.__name__}"
+            )
+
+    return _read_by_pattern
+
+
+def append_batch_fun(
+        sink_factory: Callable[[], BigQuerySink],
+) -> Callable[[Iterable[List[bytes]]], Iterable[Tuple[str, int]]]:
+    def append_batch(batches: Iterable[List[bytes]]) -> Iterable[Tuple[str, int]]:
+        sink = sink_factory()
+        cnt = 0
+        for batch in batches:
+            sink.append_rows(batch)
+            cnt += len(batch)
+        if cnt > 0:
+            logging.info(f"appended {cnt:,} rows")
+            sink.finalize_write_stream()
+            sink.commit()
+            yield cast(str, sink.stream_name), cnt
+
+    return append_batch
 
 
 def load_graph(args: Dict[str, Any]) -> Graph:
@@ -349,72 +327,6 @@ def apply_secrets(args: Dict[str, Any], debug: bool, logger: logging.Logger) -> 
         logger.warning("failed to fetch secret, falling back to params")
     else:
         args.update(secret)
-
-
-# def build_arrow_client(
-#     graph: na.model.Graph,
-#     neo4j_uri: str,
-#     neo4j_username: str,
-#     neo4j_password: str,
-#     neo4j_concurrency: int,
-#     *,
-#     logger: Any = None,
-# ) -> na.Neo4jArrowClient:
-#     neo4j_logger = logging.getLogger("neo4j")
-#     neo4j_logger.handlers.clear()
-#     neo4j_logger.addHandler(util.SparkLogHandler(logger))
-# 
-#     with neo4j.GraphDatabase.driver(
-#         neo4j_uri, auth=neo4j.basic_auth(neo4j_username, neo4j_password)
-#     ) as driver:
-#         try:
-#             record: Optional[neo4j.Record] = driver.execute_query(
-#                 "CALL gds.debug.arrow()", result_transformer_=neo4j.Result.single
-#             )
-#             if record:
-#                 enabled = bool(record["enabled"])
-#                 if not enabled:
-#                     raise Exception(
-#                         "Please ensure that Arrow Flights Service is enabled."
-#                     )
-#                 running = bool(record["running"])
-#                 if not running:
-#                     raise Exception(
-#                         "Please ensure that Arrow Flights Service is running."
-#                     )
-#                 advertised_listen_address = str(record["advertisedListenAddress"])
-#                 listen_address = str(record["listenAddress"])
-#                 batch_size = int(record["batchSize"])
-# 
-#                 uri = advertised_listen_address
-#                 if not uri:
-#                     uri = listen_address
-# 
-#                 arrow_logger = logging.getLogger("neo4j-arrow-client")
-#                 arrow_logger.handlers.clear()
-#                 arrow_logger.addHandler(util.SparkLogHandler(logger))
-# 
-#                 host, port = uri.split(":")
-#                 return na.Neo4jArrowClient(
-#                     host,
-#                     graph.name,
-#                     port=int(port),
-#                     tls=driver.encrypted,
-#                     database=graph.db,
-#                     user=neo4j_username,
-#                     password=neo4j_password,
-#                     concurrency=neo4j_concurrency,
-#                     max_chunk_size=batch_size,
-#                     logger=arrow_logger,
-#                 )
-#         except neo4j.exceptions.ClientError as e:
-#             if e.code != "Neo.ClientError.Procedure.ProcedureNotFound":
-#                 raise e
-# 
-#         raise Exception(
-#             "Please ensure that you're connecting to an AuraDS or a GDS installation "
-#             "with Arrow Flights Service enabled."
-#         )
 
 
 def build_gds_arrow_client(
@@ -609,20 +521,16 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
             apply_secrets(args, args[c.DEBUG], logger)
 
         # 3. Initialize our clients for source and sink.
-        # query_runner = QueryRunner()
-        # query_runner.set_database(db_name)
-        #
-        # graph = graphdatascience.Graph(name=graph_name, query_runner=query_runner)
         # replace graph
-        # client = build_arrow_client(
-        #     na.model.Graph(name=graph_name, db=db_name),
-        #     str(args[c.NEO4J_URI]),
-        #     str(args[c.NEO4J_USER]),
-        #     str(args[c.NEO4J_PASSWORD]),
-        #     int(args[c.NEO4J_CONCURRENCY]),
-        #     logger=logger,
-        # )
-        # logger.info(f"using neo4j client {client}")
+
+        client = build_gds_arrow_client(
+            str(args[c.NEO4J_URI]),
+            str(args[c.NEO4J_USER]),
+            str(args[c.NEO4J_PASSWORD]),
+            logger=logger
+        )
+
+        logger.info(f"using neo4j client {client}")
 
         patterns: list[pattern_parser.Pattern] = args[c.NEO4J_PATTERNS]
 
@@ -633,54 +541,53 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
         logger.info(f"using {num_partitions:,} streams")
         start_time = time.time()
 
-        # def process_patterns(
-        #     filter_fun: Callable[[typing.Any], bool],
-        #     converter: Callable[[Arrow], Generator[Any, None, None]],
-        #     sink_factory: Callable[[], BigQuerySink],
-        # ) -> Tuple[int, int]:
-        #     results: List[Tuple[str, int]] = (
-        #         sc.parallelize([p for p in filter(filter_fun, patterns)])
-        #         .flatMap(read_by_pattern_fun(client))
-        #         .repartition(num_partitions)
-        #         .map(convert_batch_fun(converter))
-        #         .mapPartitions(append_batch_fun(sink_factory))
-        #         .collect()
-        #     )
-        # 
-        #     return len(results), sum([r[1] for r in results])
-        # 
-        # node_descriptor = descriptor_pb2.DescriptorProto()
-        # Node.DESCRIPTOR.CopyToProto(node_descriptor)
-        # node_streams, node_rows = process_patterns(
-        #     pattern_parser.Pattern.is_node,
-        #     arrow_to_nodes,
-        #     sink_fun(
-        #         args[c.BQ_PROJECT],
-        #         args[c.BQ_DATASET],
-        #         args[c.BQ_NODE_TABLE],
-        #         node_descriptor,
-        #     ),
-        # )
+        def process_patterns(
+            filter_fun: Callable[[Any], bool],
+            converter: Callable[[Arrow], Generator[Any, None, None]],
+            sink_factory: Callable[[], BigQuerySink],
+        ) -> Tuple[int, int]:
+            results: List[Tuple[str, int]] = (
+                sc.parallelize([p for p in filter(filter_fun, patterns)])
+                .map(read_by_pattern_fun(client, graph_name, db_name))
+                .map(convert_batch_fun(converter))
+                .mapPartitions(append_batch_fun(sink_factory))
+                .collect()
+            )
+
+            return len(results), sum([r[1] for r in results])
+
+        node_descriptor = descriptor_pb2.DescriptorProto()
+        Node.DESCRIPTOR.CopyToProto(node_descriptor)
+        node_streams, node_rows = process_patterns(
+            pattern_parser.Pattern.is_node,
+            arrow_to_nodes,
+            sink_fun(
+                args[c.BQ_PROJECT],
+                args[c.BQ_DATASET],
+                args[c.BQ_NODE_TABLE],
+                node_descriptor,
+            ),
+        )
 
         edge_descriptor = descriptor_pb2.DescriptorProto()
         Edge.DESCRIPTOR.CopyToProto(edge_descriptor)
-        # edge_streams, edge_rows = process_patterns(
-        #     pattern_parser.Pattern.is_edge,
-        #     arrow_to_edges,
-        #     sink_fun(
-        #         args[c.BQ_PROJECT],
-        #         args[c.BQ_DATASET],
-        #         args[c.BQ_EDGE_TABLE],
-        #         edge_descriptor,
-        #     ),
-        # )
-        # 
-        # num_streams, num_rows = node_streams + edge_streams, node_rows + edge_rows
-        # duration = time.time() - start_time
-        # logger.info(
-        #     f"sent {num_rows:,} rows to BigQuery using {num_streams:,} "
-        #     f"stream(s) in {duration:,.3f}s ({num_rows / duration:,.2f} rows/s)"
-        # )
+        edge_streams, edge_rows = process_patterns(
+            pattern_parser.Pattern.is_edge,
+            arrow_to_edges,
+            sink_fun(
+                args[c.BQ_PROJECT],
+                args[c.BQ_DATASET],
+                args[c.BQ_EDGE_TABLE],
+                edge_descriptor,
+            ),
+        )
+
+        num_streams, num_rows = node_streams + edge_streams, node_rows + edge_rows
+        duration = time.time() - start_time
+        logger.info(
+            f"sent {num_rows:,} rows to BigQuery using {num_streams:,} "
+            f"stream(s) in {duration:,.3f}s ({num_rows / duration:,.2f} rows/s)"
+        )
 
     def get_logger(self, spark: SparkSession) -> logging.Logger:
         log_4j_logger = (
