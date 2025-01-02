@@ -1075,7 +1075,7 @@ description = "A Python client for the Neo4j Graph Data Science (GDS) library"
 optional = false
 python-versions = ">=3.9"
 files = []
-develop = true
+develop = false
 
 [package.dependencies]
 multimethod = ">=1.0,<2.0"
@@ -1095,8 +1095,10 @@ ogb = ["ogb (>=1.0,<2.0)"]
 rust-ext = ["neo4j-rust-ext (>=4.4.12,<6.0)"]
 
 [package.source]
-type = "directory"
-url = "../graph-data-science-client"
+type = "git"
+url = "https://github.com/neo4j/graph-data-science-client"
+reference = "a4818c8ca93bc34ccd8dead468c8ded768b48954"
+resolved_reference = "a4818c8ca93bc34ccd8dead468c8ded768b48954"
 
 [[package]]
 name = "grpc-google-iam-v1"
@@ -2720,4 +2722,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9, <4"
-content-hash = "8339aa18864b3a04dece07a8d8fbd9c448661ede38fd72c5bec868a5a3f9cbdd"
+content-hash = "5119fc9027d850dd811b0e6bdc28f32079c50a6cafa6d81744c4d0486bf8971c"
