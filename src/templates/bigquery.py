@@ -362,18 +362,9 @@ def build_gds_arrow_client(
                     raise Exception(
                         "Please ensure that Arrow Flights Service is running."
                     )
-                advertised_listen_address = str(record["advertisedListenAddress"])
                 listen_address = str(record["listenAddress"])
 
-                uri = advertised_listen_address
-                if not uri:
-                    uri = listen_address
-
-                arrow_logger = logging.getLogger("neo4j-arrow-client")
-                arrow_logger.handlers.clear()
-                arrow_logger.addHandler(util.SparkLogHandler(logger))
-
-                host, port = uri.split(":")
+                host, port = listen_address.split(":")
 
                 gds_client = gds_arrow_client.GdsArrowClient(
                     host=host,
@@ -524,7 +515,6 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
             apply_secrets(args, args[c.DEBUG], logger)
 
         # 3. Initialize our clients for source and sink.
-        # replace graph
 
         client = build_gds_arrow_client(
             str(args[c.NEO4J_URI]),
