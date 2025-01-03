@@ -82,7 +82,7 @@ def flatten(
 
 
 def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], List[ArrowData]]:
-    def map_entity(table: Arrow, mapper: MappingFn):
+    def _map_entity(table: Arrow, mapper: MappingFn):
         if not table:
             raise Exception("empty iterable of record batches provided")
         mapped_table = mapper(table)
@@ -97,7 +97,7 @@ def map_tables(model: Graph, entity_type: str) -> Callable[[DataStream], List[Ar
         else:
             mapper = edge_mapper(model, source_field)
 
-        mapped_tables = [map_entity(t, mapper) for t in table]
+        mapped_tables = [_map_entity(t, mapper) for t in table]
         return mapped_tables
 
     return _map_arrow_tables
