@@ -347,7 +347,6 @@ def build_gds_arrow_client(
             neo4j_uri, auth=neo4j.basic_auth(neo4j_username, neo4j_password)
     ) as driver:
         try:
-            # deprecated
             record: Optional[neo4j.Record] = driver.execute_query(
                 "CALL gds.debug.arrow()", result_transformer_=neo4j.Result.single
             )
