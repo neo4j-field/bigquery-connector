@@ -785,7 +785,6 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
         nodes_count = (sc.parallelize(node_streams, num_partitions)
                        .map(bq.consume_stream, True)
                        .flatMap(map_tables(graph, "NODE"))
-                       .repartition(num_partitions)
                        .map(send_nodes(client, graph))
                        .sum()
                        )
@@ -816,7 +815,6 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
             sc.parallelize(edge_streams, num_partitions)
             .map(bq.consume_stream, True)  # don't shuffle
             .flatMap(map_tables(graph, "EDGE"))
-            .repartition(num_partitions)
             .map(send_edges(client, graph))
             .sum()
         )
