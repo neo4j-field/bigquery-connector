@@ -15,7 +15,7 @@ antlr4-python3-runtime = "^4.13.1"
 fsspec = { extras = ["gcs"], version = "^2023.10.0" }
 neo4j = ">=5"
 importlib-metadata = "^6.8.0"
-graphdatascience = {git = "https://github.com/neo4j/graph-data-science-client", rev = "359156e475f5823524d784b7dba0f7f589c99767"}
+graphdatascience = {git = "https://github.com/neo4j/graph-data-science-client", tag = "1.13"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"

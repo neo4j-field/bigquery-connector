@@ -1097,8 +1097,8 @@ rust-ext = ["neo4j-rust-ext (>=4.4.12,<6.0)"]
 [package.source]
 type = "git"
 url = "https://github.com/neo4j/graph-data-science-client"
-reference = "359156e475f5823524d784b7dba0f7f589c99767"
-resolved_reference = "359156e475f5823524d784b7dba0f7f589c99767"
+reference = "1.13"
+resolved_reference = "083f363ecdaf6b0c2a16f80255dc9450df0210c7"
 
 [[package]]
 name = "grpc-google-iam-v1"
@@ -2722,4 +2722,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9, <4"
-content-hash = "c194adced5e32bd7590368e2e05efd10154680cd19ed6461dbb6019f6b4c50d9"
+content-hash = "9683d7aa05a91e10154d6b63c851434229fe176a86eab19a3d0531c2abaf758b"
