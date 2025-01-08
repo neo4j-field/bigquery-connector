@@ -368,7 +368,8 @@ def build_gds_arrow_client(
                 gds_client = gds_arrow_client.GdsArrowClient(
                     host=host,
                     port=int(port),
-                    auth=(neo4j_username, neo4j_password)
+                    auth=(neo4j_username, neo4j_password),
+                    encrypted=True,
                 )
                 return gds_client
         except neo4j.exceptions.ClientError as e:
