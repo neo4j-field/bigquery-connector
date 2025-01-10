@@ -9,9 +9,7 @@ import pyarrow
 import pytest
 import testcontainers.neo4j
 
-import neo4j_arrow._client
 from google.cloud import bigquery
-from neo4j_arrow import Neo4jArrowClient
 
 user_count = 10
 user_id_base = 1000
@@ -193,24 +191,8 @@ def driver(neo4j):
     driver.close()
 
 
-@pytest.fixture(scope="module")
-def arrow_client_factory(neo4j, driver) -> Callable[[str], Neo4jArrowClient]:
-    def _arrow_client_factory(graph_name: str) -> Neo4jArrowClient:
-        return Neo4jArrowClient(
-            neo4j.get_container_host_ip(),
-            graph=graph_name,
-            user=neo4j.NEO4J_USER,
-            password=neo4j.NEO4J_ADMIN_PASSWORD,
-            port=int(neo4j.get_exposed_port(8491)),
-            tls=False,
-            proc_names=neo4j_arrow._client.procedure_names(gds_version(driver)),
-        )
-
-    return _arrow_client_factory
-
-
 @pytest.fixture(autouse=True)
-def setup(driver, arrow_client_factory):
+def setup(driver):
     with driver.session() as session:
         session.run("CREATE OR REPLACE DATABASE neo4j WAIT").consume()
 
