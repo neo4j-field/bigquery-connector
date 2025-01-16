@@ -33,6 +33,7 @@ import pattern_parser
 from model import Edge, Node, arrow_to_nodes, arrow_to_edges
 from . import constants as c, util
 from .bq_client import BigQuerySource, BigQuerySink, BQStream
+from .constants import TELEMETRY_USER_AGENT_BASE
 from .mapper import node_mapper, edge_mapper, MappingFn
 from .model import Graph
 
@@ -338,6 +339,7 @@ def build_gds_arrow_client(
         neo4j_password: str,
         *,
         logger: Any = None,
+        user_agent: str = None,
 ) -> GdsArrowClient:
     neo4j_logger = logging.getLogger("neo4j")
     neo4j_logger.handlers.clear()
@@ -370,6 +372,7 @@ def build_gds_arrow_client(
                     port=int(port),
                     auth=(neo4j_username, neo4j_password),
                     encrypted=driver.encrypted,
+                    user_agent=user_agent,
                 )
                 return gds_client
         except neo4j.exceptions.ClientError as e:
@@ -520,7 +523,8 @@ class Neo4jGDSToBigQueryTemplate(BaseTemplate):  # type: ignore
             str(args[c.NEO4J_URI]),
             str(args[c.NEO4J_USER]),
             str(args[c.NEO4J_PASSWORD]),
-            logger=logger
+            logger=logger,
+            user_agent=f"{TELEMETRY_USER_AGENT_BASE}-source"
         )
 
         logger.info(f"using neo4j client {client}")
@@ -747,6 +751,7 @@ class BigQueryToNeo4jGDSTemplate(BaseTemplate):  # type: ignore
             str(args[c.NEO4J_USER]),
             str(args[c.NEO4J_PASSWORD]),
             logger=logger,
+            user_agent=f"{TELEMETRY_USER_AGENT_BASE}-sink"
         )
         bq = BigQuerySource(args[c.BQ_PROJECT], args[c.BQ_DATASET])
         logger.info(f"using neo4j client {client}")

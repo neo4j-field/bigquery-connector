@@ -7,6 +7,8 @@ from . import __version__
 
 USER_AGENT = f"Neo4jBigQuery/{__version__} (GPN:Neo4j;)"
 
+TELEMETRY_USER_AGENT_BASE = f"neo4j-gds-bigquery-{__version__}"
+
 BQ_PROJECT = "bq_project"
 BQ_DATASET = "bq_dataset"
 BQ_NODE_TABLE = "bq_node_table"
